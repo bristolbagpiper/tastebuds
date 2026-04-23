@@ -147,6 +147,7 @@ async function sendQueuedNotificationEmails(
 
     try {
       const delivery = await sendNotificationEmail({
+        attemptKey: `notification-${notification.id}-${Date.now()}`,
         body: notification.body,
         notificationId: notification.id,
         subject: notification.title,

@@ -3,6 +3,7 @@ import 'server-only'
 const RESEND_EMAIL_ENDPOINT = 'https://api.resend.com/emails'
 
 type SendEmailInput = {
+  attemptKey?: string
   body: string
   notificationId: number
   subject: string
@@ -51,6 +52,7 @@ function escapeHtml(value: string) {
 }
 
 export async function sendNotificationEmail({
+  attemptKey,
   body,
   notificationId,
   subject,
@@ -73,7 +75,9 @@ export async function sendNotificationEmail({
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      'Idempotency-Key': `tastebuds-notification-${notificationId}`,
+      'Idempotency-Key':
+        attemptKey ??
+        `tastebuds-notification-${notificationId}-${new Date().toISOString()}`,
     },
     method: 'POST',
   })
