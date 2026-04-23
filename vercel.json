@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/send-notification-emails?limit=60",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cleanup-notifications?days=30&limit=500",
+      "schedule": "25 3 * * *"
+    }
+  ]
+}
