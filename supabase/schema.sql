@@ -232,7 +232,7 @@ where email_sent_at is null and email_status <> 'skipped';
 
 alter table public.notifications enable row level security;
 
-grant select, update on public.notifications to authenticated;
+grant select, update, delete on public.notifications to authenticated;
 
 drop policy if exists "Users can view their own notifications" on public.notifications;
 create policy "Users can view their own notifications"
@@ -246,6 +246,12 @@ on public.notifications
 for update
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+
+drop policy if exists "Users can delete their own notifications" on public.notifications;
+create policy "Users can delete their own notifications"
+on public.notifications
+for delete
+using (auth.uid() = user_id);
 
 alter table public.profiles
 add column if not exists cuisine_preferences text[] not null default '{}';

@@ -22,6 +22,7 @@ type NotificationSummary = {
   id: number
   read_at: string | null
   title: string
+  type: string
 }
 
 type DashboardEvent = {
@@ -55,12 +56,34 @@ function formatIntent(intent: 'dating' | 'friendship') {
   return intent === 'dating' ? 'Dating' : 'Friendship'
 }
 
+function formatNotificationDate(value: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'America/New_York',
+  }).format(new Date(value))
+}
+
+function formatNotificationType(type: string) {
+  switch (type) {
+    case 'event_signup':
+      return 'Signup'
+    case 'event_update':
+      return 'Update'
+    case 'event_reminder':
+      return 'Reminder'
+    default:
+      return 'Notice'
+  }
+}
+
 export default function DashboardPage() {
   const router = useRouter()
   const [email, setEmail] = useState<string | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [events, setEvents] = useState<DashboardEvent[]>([])
   const [notifications, setNotifications] = useState<NotificationSummary[]>([])
+  const [showUnreadOnly, setShowUnreadOnly] = useState(true)
   const [loading, setLoading] = useState(true)
   const [setupError, setSetupError] = useState('')
   const [eventActionError, setEventActionError] = useState('')
@@ -69,6 +92,11 @@ export default function DashboardPage() {
   )
   const [notificationActionLoading, setNotificationActionLoading] =
     useState(false)
+  const [clearReadLoading, setClearReadLoading] = useState(false)
+  const [notificationDeletingId, setNotificationDeletingId] = useState<
+    number | null
+  >(null)
+  const [notificationError, setNotificationError] = useState('')
 
   useEffect(() => {
     let active = true
@@ -114,10 +142,10 @@ export default function DashboardPage() {
 
       const { data: notificationData, error: notificationError } = await supabase
         .from('notifications')
-        .select('body, created_at, id, read_at, title')
+        .select('body, created_at, id, read_at, title, type')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(20)
+        .limit(40)
         .returns<NotificationSummary[]>()
 
       if (!active) {
@@ -189,6 +217,8 @@ export default function DashboardPage() {
   }
 
   async function markNotificationsRead() {
+    setNotificationError('')
+
     const unreadIds = notifications
       .filter((notification) => !notification.read_at)
       .map((notification) => notification.id)
@@ -205,7 +235,7 @@ export default function DashboardPage() {
       .in('id', unreadIds)
 
     if (error) {
-      setSetupError(error.message)
+      setNotificationError(error.message)
       setNotificationActionLoading(false)
       return
     }
@@ -219,6 +249,57 @@ export default function DashboardPage() {
       )
     )
     setNotificationActionLoading(false)
+  }
+
+  async function dismissNotification(notificationId: number) {
+    setNotificationError('')
+    setNotificationDeletingId(notificationId)
+
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', notificationId)
+
+    if (error) {
+      setNotificationError(error.message)
+      setNotificationDeletingId(null)
+      return
+    }
+
+    setNotifications((current) =>
+      current.filter((notification) => notification.id !== notificationId)
+    )
+    setNotificationDeletingId(null)
+  }
+
+  async function clearReadNotifications() {
+    setNotificationError('')
+
+    const readIds = notifications
+      .filter((notification) => Boolean(notification.read_at))
+      .map((notification) => notification.id)
+
+    if (readIds.length === 0) {
+      return
+    }
+
+    setClearReadLoading(true)
+
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .in('id', readIds)
+
+    if (error) {
+      setNotificationError(error.message)
+      setClearReadLoading(false)
+      return
+    }
+
+    setNotifications((current) =>
+      current.filter((notification) => !readIds.includes(notification.id))
+    )
+    setClearReadLoading(false)
   }
 
   async function refreshEvents() {
@@ -327,6 +408,14 @@ export default function DashboardPage() {
     )
   }
 
+  const unreadNotificationCount = notifications.filter(
+    (notification) => !notification.read_at
+  ).length
+  const readNotificationCount = notifications.length - unreadNotificationCount
+  const visibleNotifications = showUnreadOnly
+    ? notifications.filter((notification) => !notification.read_at)
+    : notifications
+
   return (
     <main className="mx-auto min-h-screen w-full max-w-6xl px-8 py-14">
       <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
@@ -387,40 +476,97 @@ export default function DashboardPage() {
         <section className="rounded-[1.75rem] border border-zinc-200 bg-zinc-50 p-6">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-              Activity
+              Notifications
             </p>
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              className={`rounded-xl px-3 py-2 text-xs font-medium transition ${
+                showUnreadOnly
+                  ? 'bg-zinc-950 text-white'
+                  : 'border border-zinc-950 text-zinc-950 hover:bg-zinc-950 hover:text-white'
+              }`}
+              onClick={() => setShowUnreadOnly(true)}
+              type="button"
+            >
+              Unread ({unreadNotificationCount})
+            </button>
+            <button
+              className={`rounded-xl px-3 py-2 text-xs font-medium transition ${
+                !showUnreadOnly
+                  ? 'bg-zinc-950 text-white'
+                  : 'border border-zinc-950 text-zinc-950 hover:bg-zinc-950 hover:text-white'
+              }`}
+              onClick={() => setShowUnreadOnly(false)}
+              type="button"
+            >
+              All ({notifications.length})
+            </button>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
             <button
               className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
-              disabled={
-                notificationActionLoading ||
-                notifications.every((notification) => notification.read_at)
-              }
+              disabled={notificationActionLoading || unreadNotificationCount === 0}
               onClick={() => void markNotificationsRead()}
               type="button"
             >
               {notificationActionLoading ? 'Marking...' : 'Mark all read'}
             </button>
+            <button
+              className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+              disabled={clearReadLoading || readNotificationCount === 0}
+              onClick={() => void clearReadNotifications()}
+              type="button"
+            >
+              {clearReadLoading ? 'Clearing...' : 'Clear read'}
+            </button>
           </div>
+          {notificationError ? (
+            <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+              {notificationError}
+            </div>
+          ) : null}
           <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
-            {notifications.length > 0 ? (
-              notifications.map((notification) => (
+            {visibleNotifications.length > 0 ? (
+              visibleNotifications.map((notification) => (
                 <article
                   className="rounded-2xl border border-zinc-200 bg-white p-4"
                   key={notification.id}
                 >
-                  <div className="flex items-center gap-2">
-                    {!notification.read_at ? (
-                      <span className="rounded-full bg-zinc-950 px-2 py-0.5 text-xs font-medium uppercase tracking-[0.12em] text-white">
-                        New
-                      </span>
-                    ) : null}
-                    <p className="text-sm font-semibold text-zinc-950">
-                      {notification.title}
-                    </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      {!notification.read_at ? (
+                        <span className="rounded-full bg-zinc-950 px-2 py-0.5 text-xs font-medium uppercase tracking-[0.12em] text-white">
+                          New
+                        </span>
+                      ) : null}
+                      <p className="text-sm font-semibold text-zinc-950">
+                        {notification.title}
+                      </p>
+                    </div>
+                    <button
+                      className="text-xs font-medium text-zinc-500 transition hover:text-zinc-950 disabled:cursor-not-allowed disabled:text-zinc-300"
+                      disabled={notificationDeletingId === notification.id}
+                      onClick={() => void dismissNotification(notification.id)}
+                      type="button"
+                    >
+                      {notificationDeletingId === notification.id
+                        ? 'Deleting...'
+                        : 'Dismiss'}
+                    </button>
                   </div>
+                  <p className="mt-1 text-xs uppercase tracking-[0.12em] text-zinc-500">
+                    {formatNotificationType(notification.type)} -{' '}
+                    {formatNotificationDate(notification.created_at)}
+                  </p>
                   <p className="mt-2 text-sm text-zinc-600">{notification.body}</p>
                 </article>
               ))
+            ) : notifications.length > 0 && showUnreadOnly ? (
+              <p className="text-sm text-zinc-600">
+                No unread notifications. Switch to <span className="font-medium">All</span>{' '}
+                to review history.
+              </p>
             ) : (
               <p className="text-sm text-zinc-600">No notifications yet.</p>
             )}
