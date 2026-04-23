@@ -28,6 +28,66 @@ type QueuedNotificationRow = {
   user_id: string
 }
 
+type AdminClient = any
+
+async function rearmExistingNotification(
+  adminClient: AdminClient,
+  notification: NotificationInput
+) {
+  let query = adminClient
+    .from('notifications')
+    .select('body, id, title, user_id')
+    .eq('user_id', notification.userId)
+    .eq('type', notification.type)
+
+  if (notification.eventId !== null && notification.eventId !== undefined) {
+    query = query.eq('event_id', notification.eventId)
+  } else if (
+    notification.matchId !== null &&
+    notification.matchId !== undefined
+  ) {
+    query = query.eq('match_id', notification.matchId)
+  } else {
+    return null
+  }
+
+  const { data: existingNotification, error: findError } =
+    await query.maybeSingle()
+
+  if (findError) {
+    throw new Error(findError.message)
+  }
+
+  if (!existingNotification) {
+    return null
+  }
+
+  const nowIso = new Date().toISOString()
+
+  const { data: updatedNotification, error: updateError } = await adminClient
+    .from('notifications')
+    .update({
+      body: notification.body,
+      created_at: nowIso,
+      email_attempted_at: null,
+      email_error: null,
+      email_provider_id: null,
+      email_sent_at: null,
+      email_status: 'pending',
+      read_at: null,
+      title: notification.title,
+    })
+    .eq('id', existingNotification.id)
+    .select('body, id, title, user_id')
+    .single()
+
+  if (updateError || !updatedNotification) {
+    throw new Error(updateError?.message ?? 'Failed to rearm notification.')
+  }
+
+  return updatedNotification
+}
+
 async function markNotificationEmailSkipped(
   notificationId: number,
   errorMessage: string
@@ -122,7 +182,7 @@ export async function queueNotifications(notifications: NotificationInput[]) {
     return
   }
 
-  const adminClient = createServerSupabaseAdminClient()
+  const adminClient: AdminClient = createServerSupabaseAdminClient()
   const queuedNotifications: QueuedNotificationRow[] = []
 
   for (const notification of notifications) {
@@ -137,10 +197,19 @@ export async function queueNotifications(notifications: NotificationInput[]) {
         user_id: notification.userId,
       })
       .select('body, id, title, user_id')
-      .single<QueuedNotificationRow>()
+      .single()
 
     if (error) {
       if (error.code === '23505') {
+        const rearmedNotification = await rearmExistingNotification(
+          adminClient,
+          notification
+        )
+
+        if (rearmedNotification) {
+          queuedNotifications.push(rearmedNotification)
+        }
+
         continue
       }
 
