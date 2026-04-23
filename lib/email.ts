@@ -24,7 +24,21 @@ function getRequiredEmailEnv(name: 'EMAIL_FROM' | 'RESEND_API_KEY') {
 }
 
 function getAppUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'
+  const rawValue =
+    process.env.APP_URL ??
+    process.env.NEXT_PUBLIC_APP_URL ??
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ??
+    process.env.VERCEL_URL
+
+  if (!rawValue) {
+    return 'http://localhost:3000'
+  }
+
+  const withProtocol = rawValue.startsWith('http')
+    ? rawValue
+    : `https://${rawValue}`
+
+  return withProtocol.replace(/\/+$/, '')
 }
 
 function escapeHtml(value: string) {
