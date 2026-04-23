@@ -13,6 +13,16 @@ export default function SignupPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+
+  function getAuthRedirectUrl() {
+    const baseUrl =
+      appUrl.trim().length > 0
+        ? appUrl.replace(/\/+$/, '')
+        : window.location.origin
+
+    return `${baseUrl}/auth/callback`
+  }
 
   useEffect(() => {
     let active = true
@@ -44,7 +54,7 @@ export default function SignupPage() {
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        emailRedirectTo: getAuthRedirectUrl(),
       },
     })
 
