@@ -4,42 +4,16 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
-import {
-  formatRoundDate,
-  getIntentRoundLabel,
-  getUpcomingWednesdayDate,
-  type MatchIntent,
-} from '@/lib/rounds'
 import { supabase } from '@/lib/supabase/client'
 
 type Profile = {
   bio: string | null
+  cuisine_preferences: string[] | null
   display_name: string | null
-  intent: string | null
+  intent: 'dating' | 'friendship' | null
   max_travel_minutes: number | null
   neighbourhood: string | null
   subregion: string | null
-}
-
-type Availability = {
-  available: boolean
-  intent: MatchIntent
-}
-
-type MatchResponseStatus = 'pending' | 'accepted' | 'declined'
-type MatchStatus = 'proposed' | 'mutual' | 'declined'
-
-type MatchSummary = {
-  currentUserResponse: MatchResponseStatus
-  id: number
-  partnerBio: string | null
-  partnerName: string | null
-  partnerNeighbourhood: string | null
-  partnerResponse: MatchResponseStatus
-  partnerSubregion: string | null
-  rationale: string | null
-  score: number
-  status: MatchStatus
 }
 
 type NotificationSummary = {
@@ -48,117 +22,58 @@ type NotificationSummary = {
   id: number
   read_at: string | null
   title: string
-  type: string
 }
 
-function getMatchStateHeading(match: MatchSummary) {
-  if (match.status === 'mutual') {
-    return 'Confirmed match'
-  }
-
-  if (match.status === 'declined') {
-    return 'Match closed'
-  }
-
-  if (match.currentUserResponse === 'accepted') {
-    return 'Waiting for them'
-  }
-
-  if (match.partnerResponse === 'accepted') {
-    return 'They accepted. Your move.'
-  }
-
-  return 'Proposed match'
+type DashboardEvent = {
+  attendeeCount: number
+  capacity: number
+  description: string | null
+  id: number
+  intent: 'dating' | 'friendship'
+  isJoined: boolean
+  personalMatchScore: number | null
+  personalMatchSummary: string | null
+  projectedRestaurantScore: number
+  restaurant_cuisines: string[] | null
+  restaurant_name: string
+  restaurant_neighbourhood: string | null
+  restaurant_subregion: string
+  spotsLeft: number
+  starts_at: string
+  title: string
 }
 
-function getMatchStateCopy(match: MatchSummary) {
-  if (match.status === 'mutual') {
-    return 'Both of you accepted. This is now a confirmed match for the current round.'
-  }
-
-  if (match.status === 'declined') {
-    return 'One of you declined, so this match is closed for this round.'
-  }
-
-  if (match.currentUserResponse === 'accepted') {
-    return 'You accepted this match. It only becomes confirmed if they accept too.'
-  }
-
-  if (match.partnerResponse === 'accepted') {
-    return 'They have already accepted. Accept if you want to confirm the match.'
-  }
-
-  return 'Review the match and accept or decline it. Nothing is confirmed until both people accept.'
+function formatEventDate(value: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'full',
+    timeStyle: 'short',
+    timeZone: 'America/New_York',
+  }).format(new Date(value))
 }
 
-function getResponseLabel(response: MatchResponseStatus) {
-  if (response === 'accepted') {
-    return 'Accepted'
-  }
-
-  if (response === 'declined') {
-    return 'Declined'
-  }
-
-  return 'Waiting'
-}
-
-function getMeetAreaSuggestion(profile: Profile | null, match: MatchSummary) {
-  const ownSubregion = profile?.subregion
-  const partnerSubregion = match.partnerSubregion
-  const ownNeighbourhood = profile?.neighbourhood?.trim()
-  const partnerNeighbourhood = match.partnerNeighbourhood?.trim()
-
-  if (
-    ownNeighbourhood &&
-    partnerNeighbourhood &&
-    ownNeighbourhood.toLowerCase() === partnerNeighbourhood.toLowerCase()
-  ) {
-    return ownNeighbourhood
-  }
-
-  if (ownSubregion && partnerSubregion && ownSubregion === partnerSubregion) {
-    return `${ownSubregion}, near a subway-friendly cafe or bar`
-  }
-
-  const subregions = new Set([ownSubregion, partnerSubregion])
-
-  if (subregions.has('Uptown') && subregions.has('Midtown')) {
-    return 'Upper Midtown, around Columbus Circle or Lincoln Center'
-  }
-
-  if (subregions.has('Midtown') && subregions.has('Downtown')) {
-    return 'Flatiron or Union Square'
-  }
-
-  if (subregions.has('Uptown') && subregions.has('Downtown')) {
-    return 'Midtown, around Bryant Park or Grand Central'
-  }
-
-  return 'A central Manhattan spot with easy subway access'
+function formatIntent(intent: 'dating' | 'friendship') {
+  return intent === 'dating' ? 'Dating' : 'Friendship'
 }
 
 export default function DashboardPage() {
   const router = useRouter()
   const [email, setEmail] = useState<string | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [availability, setAvailability] = useState<Availability | null>(null)
-  const [matchSummary, setMatchSummary] = useState<MatchSummary | null>(null)
+  const [events, setEvents] = useState<DashboardEvent[]>([])
   const [notifications, setNotifications] = useState<NotificationSummary[]>([])
-  const [matchActionLoading, setMatchActionLoading] = useState(false)
-  const [notificationActionLoading, setNotificationActionLoading] =
-    useState(false)
   const [loading, setLoading] = useState(true)
   const [setupError, setSetupError] = useState('')
-  const roundDate = getUpcomingWednesdayDate()
-  const formattedRoundDate = formatRoundDate(roundDate)
-  const profileIntent = (profile?.intent as MatchIntent | null) ?? 'dating'
-  const eventLabel = getIntentRoundLabel(profileIntent)
+  const [eventActionError, setEventActionError] = useState('')
+  const [eventActionLoadingId, setEventActionLoadingId] = useState<number | null>(
+    null
+  )
+  const [notificationActionLoading, setNotificationActionLoading] =
+    useState(false)
 
   useEffect(() => {
     let active = true
 
-    async function loadUser() {
+    async function loadDashboard() {
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -175,10 +90,10 @@ export default function DashboardPage() {
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select(
-          'bio, display_name, intent, max_travel_minutes, neighbourhood, subregion'
+          'bio, cuisine_preferences, display_name, intent, max_travel_minutes, neighbourhood, subregion'
         )
         .eq('id', user.id)
-        .maybeSingle()
+        .maybeSingle<Profile>()
 
       if (!active) {
         return
@@ -186,7 +101,7 @@ export default function DashboardPage() {
 
       if (profileError) {
         setSetupError(
-          'The profiles table is not ready yet. Run the SQL in supabase/schema.sql in the Supabase SQL editor.'
+          'The profiles table is not ready yet. Run the latest SQL migration in Supabase before using the dashboard.'
         )
         setLoading(false)
         return
@@ -197,68 +112,12 @@ export default function DashboardPage() {
         return
       }
 
-      const { data: availabilityData, error: availabilityError } = await supabase
-        .from('availability')
-        .select('available, intent')
-        .eq('user_id', user.id)
-        .eq('round_date', roundDate)
-        .maybeSingle<Availability>()
-
-      if (!active) {
-        return
-      }
-
-      if (availabilityError) {
-        setSetupError(
-          'The availability table is not ready yet. Run the updated SQL in supabase/schema.sql in the Supabase SQL editor.'
-        )
-        setLoading(false)
-        return
-      }
-
-      const nextAvailability =
-        availabilityData && availabilityData.intent !== profileData.intent
-          ? { ...availabilityData, intent: profileData.intent as MatchIntent }
-          : availabilityData
-
-      if (
-        availabilityData &&
-        profileData.intent &&
-        availabilityData.intent !== profileData.intent
-      ) {
-        const { error: syncError } = await supabase.from('availability').upsert(
-          {
-            available: availabilityData.available,
-            intent: profileData.intent,
-            round_date: roundDate,
-            user_id: user.id,
-          },
-          {
-            onConflict: 'user_id,round_date',
-          }
-        )
-
-        if (!active) {
-          return
-        }
-
-        if (syncError) {
-          setSetupError(syncError.message)
-          setLoading(false)
-          return
-        }
-      }
-
-      setEmail(user.email ?? null)
-      setProfile(profileData)
-      setAvailability(nextAvailability ?? null)
-
       const { data: notificationData, error: notificationError } = await supabase
         .from('notifications')
-        .select('body, created_at, id, read_at, title, type')
+        .select('body, created_at, id, read_at, title')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(5)
+        .limit(20)
         .returns<NotificationSummary[]>()
 
       if (!active) {
@@ -266,14 +125,10 @@ export default function DashboardPage() {
       }
 
       if (notificationError) {
-        setSetupError(
-          'The notifications table is not ready yet. Run npm run db:push, then refresh the dashboard.'
-        )
+        setSetupError(notificationError.message)
         setLoading(false)
         return
       }
-
-      setNotifications(notificationData ?? [])
 
       const {
         data: { session },
@@ -281,38 +136,52 @@ export default function DashboardPage() {
 
       const accessToken = session?.access_token
 
-      if (accessToken) {
-        const response = await fetch('/api/current-match', {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        })
-
-        const payload = (await response.json()) as {
-          error?: string
-          match?: MatchSummary | null
-        }
-
-        if (!active) {
-          return
-        }
-
-        if (response.ok && payload.match) {
-          setMatchSummary(payload.match)
-        } else if (!response.ok && payload.error) {
-          setSetupError(payload.error)
-        }
+      if (!accessToken) {
+        setSetupError('Missing active session. Log in again.')
+        setLoading(false)
+        return
       }
 
+      const eventsResponse = await fetch('/api/events', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      })
+
+      const eventsPayload = (await eventsResponse.json()) as {
+        error?: string
+        events?: DashboardEvent[]
+        onboardingRequired?: boolean
+      }
+
+      if (!active) {
+        return
+      }
+
+      if (!eventsResponse.ok || eventsPayload.error) {
+        setSetupError(eventsPayload.error ?? 'Could not load events.')
+        setLoading(false)
+        return
+      }
+
+      if (eventsPayload.onboardingRequired) {
+        router.replace('/onboarding')
+        return
+      }
+
+      setEmail(user.email ?? null)
+      setProfile(profileData)
+      setNotifications(notificationData ?? [])
+      setEvents(eventsPayload.events ?? [])
       setLoading(false)
     }
 
-    void loadUser()
+    void loadDashboard()
 
     return () => {
       active = false
     }
-  }, [roundDate, router])
+  }, [router])
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -342,7 +211,6 @@ export default function DashboardPage() {
     }
 
     const readAt = new Date().toISOString()
-
     setNotifications((current) =>
       current.map((notification) =>
         unreadIds.includes(notification.id)
@@ -353,29 +221,55 @@ export default function DashboardPage() {
     setNotificationActionLoading(false)
   }
 
-  async function respondToMatch(response: 'accepted' | 'declined') {
-    if (!matchSummary) {
+  async function refreshEvents() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const accessToken = session?.access_token
+
+    if (!accessToken) {
+      setSetupError('Missing active session. Log in again.')
       return
     }
 
-    setMatchActionLoading(true)
+    const response = await fetch('/api/events', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
+    const payload = (await response.json()) as {
+      error?: string
+      events?: DashboardEvent[]
+    }
+
+    if (!response.ok || payload.error) {
+      setEventActionError(payload.error ?? 'Could not refresh events.')
+      return
+    }
+
+    setEvents(payload.events ?? [])
+  }
+
+  async function setEventSignup(eventId: number, action: 'join' | 'leave') {
+    setEventActionLoadingId(eventId)
+    setEventActionError('')
 
     const {
       data: { session },
     } = await supabase.auth.getSession()
-
     const accessToken = session?.access_token
 
     if (!accessToken) {
-      setSetupError('Missing active session. Log in again before responding.')
-      setMatchActionLoading(false)
+      setEventActionError('Missing active session. Log in again.')
+      setEventActionLoadingId(null)
       return
     }
 
-    const result = await fetch('/api/match-response', {
+    const response = await fetch('/api/events/signup', {
       body: JSON.stringify({
-        matchId: matchSummary.id,
-        response,
+        action,
+        eventId,
       }),
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -384,38 +278,22 @@ export default function DashboardPage() {
       method: 'POST',
     })
 
-    const payload = (await result.json()) as {
-      currentUserResponse?: MatchResponseStatus
-      error?: string
-      partnerResponse?: MatchResponseStatus
-      status?: MatchStatus
-      user_a_response?: MatchResponseStatus
-      user_b_response?: MatchResponseStatus
-    }
+    const payload = (await response.json()) as { error?: string }
 
-    if (!result.ok || payload.error) {
-      setSetupError(payload.error ?? 'Failed to update the match response.')
-      setMatchActionLoading(false)
+    if (!response.ok || payload.error) {
+      setEventActionError(payload.error ?? 'Could not update your event signup.')
+      setEventActionLoadingId(null)
       return
     }
 
-    setMatchSummary((current) =>
-      current
-        ? {
-            ...current,
-            currentUserResponse: payload.currentUserResponse ?? response,
-            partnerResponse: payload.partnerResponse ?? current.partnerResponse,
-            status: payload.status ?? current.status,
-          }
-        : current
-    )
-    setMatchActionLoading(false)
+    await refreshEvents()
+    setEventActionLoadingId(null)
   }
 
   if (loading) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-3xl items-center px-8">
-        <p className="text-sm text-zinc-600">Checking your session...</p>
+      <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-8">
+        <p className="text-sm text-zinc-600">Loading dashboard...</p>
       </main>
     )
   }
@@ -427,7 +305,7 @@ export default function DashboardPage() {
           Dashboard
         </p>
         <h1 className="mt-3 text-4xl font-semibold text-zinc-950">
-          Auth works. Data setup does not.
+          Data setup still has gaps
         </h1>
         <p className="mt-4 max-w-2xl text-base text-zinc-600">{setupError}</p>
         <div className="mt-8 flex flex-wrap gap-3">
@@ -450,249 +328,256 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center px-8 py-16">
+    <main className="mx-auto min-h-screen w-full max-w-6xl px-8 py-14">
       <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
         Dashboard
       </p>
       <h1 className="mt-3 text-4xl font-semibold text-zinc-950">
-        You&apos;re signed in.
+        Restaurant events, not blind matching
       </h1>
-      <p className="mt-4 max-w-2xl text-base text-zinc-600">
+      <p className="mt-4 max-w-3xl text-base text-zinc-600">
         Logged in as <span className="font-medium text-zinc-950">{email}</span>.
-        The app now has a profile layer behind auth, which is the first actually
-        useful step toward Wednesday match runs.
+        You now join specific events directly. Scores are computed from your
+        profile and who else is attending.
       </p>
 
-      <div className="mt-8 rounded-[1.75rem] border border-zinc-200 bg-zinc-50 p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-              Notifications
-            </p>
-            <p className="mt-2 text-sm text-zinc-600">
-              Match updates are stored here first. Email delivery comes later.
-            </p>
+      <div className="mt-8 grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
+        <section className="rounded-[1.75rem] border border-zinc-200 bg-zinc-50 p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
+                Profile
+              </p>
+              <p className="mt-3 text-2xl font-semibold text-zinc-950">
+                {profile?.display_name}
+              </p>
+              <p className="mt-2 text-sm text-zinc-600">
+                {profile?.subregion}
+                {profile?.neighbourhood ? `, ${profile.neighbourhood}` : ''}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
+              <p>
+                Preference:{' '}
+                <span className="font-medium text-zinc-950">
+                  {profile?.intent ? formatIntent(profile.intent) : 'Not set'}
+                </span>
+              </p>
+              <p className="mt-1">
+                Max travel:{' '}
+                <span className="font-medium text-zinc-950">
+                  {profile?.max_travel_minutes ?? 30} minutes
+                </span>
+              </p>
+            </div>
           </div>
-          <button
-            className="rounded-xl border border-zinc-950 px-4 py-2 text-sm font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
-            disabled={
-              notificationActionLoading ||
-              notifications.every((notification) => notification.read_at)
-            }
-            onClick={() => void markNotificationsRead()}
-            type="button"
-          >
-            {notificationActionLoading ? 'Marking...' : 'Mark all read'}
-          </button>
-        </div>
-        {notifications.length > 0 ? (
-          <ul className="mt-5 space-y-3">
-            {notifications.map((notification) => (
-              <li
-                className="rounded-2xl border border-zinc-200 bg-white p-4"
-                key={notification.id}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  {!notification.read_at ? (
-                    <span className="rounded-full bg-zinc-950 px-2 py-0.5 text-xs font-medium uppercase tracking-[0.12em] text-white">
-                      New
-                    </span>
-                  ) : null}
-                  <p className="text-sm font-semibold text-zinc-950">
-                    {notification.title}
-                  </p>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-zinc-600">
-                  {notification.body}
-                </p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-5 text-sm text-zinc-600">
-            No notifications yet. Run a round or respond to a match to create
-            one.
-          </p>
-        )}
-      </div>
-
-      <div className="mt-8 grid gap-4 rounded-[1.75rem] border border-zinc-200 bg-zinc-50 p-6 sm:grid-cols-2">
-        <div>
-          <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-            Profile
-          </p>
-          <p className="mt-3 text-2xl font-semibold text-zinc-950">
-            {profile?.display_name}
-          </p>
-          <p className="mt-2 text-sm text-zinc-600">
-            {profile?.subregion}
-            {profile?.neighbourhood ? `, ${profile.neighbourhood}` : ''}
-          </p>
-        </div>
-        <div>
-          <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-            This round
-          </p>
-          <p className="mt-3 text-base text-zinc-700">{formattedRoundDate}</p>
-          <p className="mt-2 text-base text-zinc-700">
-            Event type:{' '}
-            <span className="font-medium text-zinc-950">{eventLabel}</span>
-          </p>
-          <p className="mt-2 text-base text-zinc-700">
-            Status:{' '}
+          <p className="mt-4 text-sm text-zinc-600">
+            Cuisine preferences:{' '}
             <span className="font-medium text-zinc-950">
-              {availability?.available
-                ? `Opted into the ${eventLabel.toLowerCase()}`
-                : `Not opted into the ${eventLabel.toLowerCase()}`}
+              {profile?.cuisine_preferences?.length
+                ? profile.cuisine_preferences.join(', ')
+                : 'Not set yet'}
             </span>
           </p>
-        </div>
-        <div>
-          <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-            Match settings
-          </p>
-          <p className="mt-3 text-base text-zinc-700">
-            Intent: <span className="font-medium text-zinc-950">{profile?.intent}</span>
-          </p>
-          <p className="mt-2 text-base text-zinc-700">
-            Max travel:{' '}
-            <span className="font-medium text-zinc-950">
-              {profile?.max_travel_minutes} minutes
-            </span>
-          </p>
-        </div>
+          {profile?.bio ? (
+            <p className="mt-4 text-sm leading-7 text-zinc-600">{profile.bio}</p>
+          ) : null}
+        </section>
+
+        <section className="rounded-[1.75rem] border border-zinc-200 bg-zinc-50 p-6">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
+              Activity
+            </p>
+            <button
+              className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+              disabled={
+                notificationActionLoading ||
+                notifications.every((notification) => notification.read_at)
+              }
+              onClick={() => void markNotificationsRead()}
+              type="button"
+            >
+              {notificationActionLoading ? 'Marking...' : 'Mark all read'}
+            </button>
+          </div>
+          <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
+            {notifications.length > 0 ? (
+              notifications.map((notification) => (
+                <article
+                  className="rounded-2xl border border-zinc-200 bg-white p-4"
+                  key={notification.id}
+                >
+                  <div className="flex items-center gap-2">
+                    {!notification.read_at ? (
+                      <span className="rounded-full bg-zinc-950 px-2 py-0.5 text-xs font-medium uppercase tracking-[0.12em] text-white">
+                        New
+                      </span>
+                    ) : null}
+                    <p className="text-sm font-semibold text-zinc-950">
+                      {notification.title}
+                    </p>
+                  </div>
+                  <p className="mt-2 text-sm text-zinc-600">{notification.body}</p>
+                </article>
+              ))
+            ) : (
+              <p className="text-sm text-zinc-600">No notifications yet.</p>
+            )}
+          </div>
+        </section>
       </div>
 
-      <div className="mt-6 rounded-[1.75rem] border border-zinc-200 bg-zinc-50 p-6">
-        <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-          Current match
-        </p>
-        {matchSummary ? (
-          <>
-            <div className="mt-3 rounded-2xl border border-zinc-200 bg-white p-4">
-              <p className="text-sm font-semibold text-zinc-950">
-                {getMatchStateHeading(matchSummary)}
-              </p>
-              <p className="mt-2 text-sm leading-6 text-zinc-600">
-                {getMatchStateCopy(matchSummary)}
-              </p>
-            </div>
-            <p className="mt-3 text-2xl font-semibold text-zinc-950">
-              {matchSummary.partnerName}
-            </p>
-            <p className="mt-2 text-sm text-zinc-600">
-              {matchSummary.partnerSubregion}
-              {matchSummary.partnerNeighbourhood
-                ? `, ${matchSummary.partnerNeighbourhood}`
-                : ''}
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2 text-sm">
-              <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-zinc-700">
-                You: {getResponseLabel(matchSummary.currentUserResponse)}
-              </span>
-              <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-zinc-700">
-                Them: {getResponseLabel(matchSummary.partnerResponse)}
-              </span>
-              <span className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-zinc-700">
-                Score: {matchSummary.score}
-              </span>
-            </div>
-            {matchSummary.rationale ? (
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-600">
-                {matchSummary.rationale}
-              </p>
-            ) : null}
-            {matchSummary.partnerBio ? (
-              <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-600">
-                {matchSummary.partnerBio}
-              </p>
-            ) : null}
-            {matchSummary.status === 'mutual' ? (
-              <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-emerald-800">
-                  Suggested next step
-                </p>
-                <p className="mt-3 text-lg font-semibold text-emerald-950">
-                  Meet near {getMeetAreaSuggestion(profile, matchSummary)}
-                </p>
-                <p className="mt-2 text-sm leading-6 text-emerald-900">
-                  Use Wednesday evening as the default plan for now. Pick a
-                  public venue, keep the first meet short, and agree the exact
-                  time outside the app until messaging or email notifications are
-                  added.
-                </p>
-              </div>
-            ) : null}
-            {matchSummary.status === 'proposed' &&
-            matchSummary.currentUserResponse === 'pending' ? (
-              <div className="mt-6 flex flex-wrap gap-3">
-                <button
-                  className="rounded-xl bg-zinc-950 px-4 py-3 font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-                  disabled={matchActionLoading}
-                  onClick={() => void respondToMatch('accepted')}
-                  type="button"
-                >
-                  {matchActionLoading ? 'Saving...' : 'Accept match'}
-                </button>
-                <button
-                  className="rounded-xl border border-zinc-950 px-4 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
-                  disabled={matchActionLoading}
-                  onClick={() => void respondToMatch('declined')}
-                  type="button"
-                >
-                  Decline match
-                </button>
-              </div>
-            ) : null}
-          </>
-        ) : (
-          <p className="mt-3 text-sm text-zinc-600">
-            No match has been generated for your current event yet.
-          </p>
-        )}
-      </div>
-
-      {profile?.bio ? (
-        <p className="mt-6 max-w-2xl text-sm leading-7 text-zinc-600">
-          {profile.bio}
-        </p>
+      {eventActionError ? (
+        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {eventActionError}
+        </div>
       ) : null}
 
-      <div className="mt-8 flex flex-wrap gap-3">
-        <Link
-          className="rounded-xl border border-zinc-950 px-4 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
-          href="/admin"
-        >
-          Open admin
-        </Link>
-        <Link
-          className="rounded-xl border border-zinc-950 px-4 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
-          href="/availability"
-        >
-          {availability?.available
-            ? `Update ${eventLabel.toLowerCase()}`
-            : `Opt into ${eventLabel.toLowerCase()}`}
-        </Link>
-        <Link
-          className="rounded-xl border border-zinc-950 px-4 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
-          href="/onboarding"
-        >
-          Edit profile
-        </Link>
-        <Link
-          className="rounded-xl border border-zinc-950 px-4 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
-          href="/"
-        >
-          Back to home
-        </Link>
-        <button
-          className="rounded-xl bg-zinc-950 px-4 py-3 font-medium text-white transition hover:bg-zinc-800"
-          onClick={handleLogout}
-          type="button"
-        >
-          Log out
-        </button>
-      </div>
+      <section className="mt-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
+            Upcoming events
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <Link
+              className="rounded-xl border border-zinc-950 px-4 py-2.5 text-sm font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
+              href="/onboarding"
+            >
+              Edit profile
+            </Link>
+            <Link
+              className="rounded-xl border border-zinc-950 px-4 py-2.5 text-sm font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
+              href="/admin"
+            >
+              Open admin
+            </Link>
+            <button
+              className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800"
+              onClick={handleLogout}
+              type="button"
+            >
+              Log out
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4">
+          {events.length > 0 ? (
+            events.map((event) => (
+              <article
+                className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-6"
+                key={event.id}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
+                      {formatIntent(event.intent)} event
+                    </p>
+                    <h2 className="mt-2 text-2xl font-semibold text-zinc-950">
+                      {event.title}
+                    </h2>
+                    <p className="mt-2 text-sm text-zinc-700">
+                      {event.restaurant_name} · {event.restaurant_subregion}
+                      {event.restaurant_neighbourhood
+                        ? `, ${event.restaurant_neighbourhood}`
+                        : ''}
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-700">
+                      {formatEventDate(event.starts_at)}
+                    </p>
+                    {event.restaurant_cuisines?.length ? (
+                      <p className="mt-1 text-sm text-zinc-600">
+                        Cuisine: {event.restaurant_cuisines.join(', ')}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
+                    <p>
+                      Attending:{' '}
+                      <span className="font-medium text-zinc-950">
+                        {event.attendeeCount}/{event.capacity}
+                      </span>
+                    </p>
+                    <p className="mt-1">
+                      Spots left:{' '}
+                      <span className="font-medium text-zinc-950">
+                        {event.spotsLeft}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                {event.description ? (
+                  <p className="mt-4 text-sm leading-7 text-zinc-600">
+                    {event.description}
+                  </p>
+                ) : null}
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+                      Restaurant fit
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-zinc-950">
+                      {event.projectedRestaurantScore}
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      Based on cuisine preferences, travel tolerance, and event
+                      location.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+                      Personal fit
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-zinc-950">
+                      {event.personalMatchScore ?? '--'}
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      {event.personalMatchSummary ??
+                        'Join the event to compute your attendee fit score.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  {event.isJoined ? (
+                    <button
+                      className="rounded-xl border border-zinc-950 px-4 py-2.5 text-sm font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+                      disabled={eventActionLoadingId === event.id}
+                      onClick={() => void setEventSignup(event.id, 'leave')}
+                      type="button"
+                    >
+                      {eventActionLoadingId === event.id
+                        ? 'Updating...'
+                        : 'Leave event'}
+                    </button>
+                  ) : (
+                    <button
+                      className="rounded-xl bg-zinc-950 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                      disabled={eventActionLoadingId === event.id || event.spotsLeft === 0}
+                      onClick={() => void setEventSignup(event.id, 'join')}
+                      type="button"
+                    >
+                      {eventActionLoadingId === event.id
+                        ? 'Joining...'
+                        : event.spotsLeft === 0
+                          ? 'Event full'
+                          : 'Join event'}
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-6 text-sm text-zinc-600">
+              No upcoming events yet. Admins need to create restaurant events
+              before anyone can sign up.
+            </div>
+          )}
+        </div>
+      </section>
     </main>
   )
 }

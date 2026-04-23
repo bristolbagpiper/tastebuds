@@ -3,76 +3,80 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
-import { formatRoundDate, getUpcomingWednesdayDate } from '@/lib/rounds'
+import { MANHATTAN_SUBREGIONS, parseCuisinePreferenceInput } from '@/lib/events'
 import { supabase } from '@/lib/supabase/client'
 
-type RunIntent = 'all' | 'dating' | 'friendship'
+type EventIntent = 'dating' | 'friendship'
 
-type MatchRunResult = {
-  blockedPairCount: number
-  intent: 'dating' | 'friendship'
-  matchCount: number
-  participantCount: number
-  roundId: number
-}
-
-type RoundParticipantSummary = {
-  displayName: string | null
-  id: string
-  neighbourhood: string | null
-  subregion: string | null
-}
-
-type RoundMatchSummary = {
+type AdminEvent = {
+  attendeeCount: number
+  capacity: number
+  created_at: string
+  description: string | null
   id: number
-  rationale: string | null
-  score: number
-  status: string
-  userAName: string | null
-  userBName: string | null
+  intent: EventIntent
+  restaurant_cuisines: string[]
+  restaurant_name: string
+  restaurant_neighbourhood: string | null
+  restaurant_subregion: string
+  starts_at: string
+  status: 'open' | 'closed' | 'cancelled'
+  title: string
 }
 
-type AdminRoundSummary = {
-  blockedHistoricalPairCount: number
-  intent: 'dating' | 'friendship'
-  matches: RoundMatchSummary[]
-  participantCount: number
-  participants: RoundParticipantSummary[]
-  roundId: number | null
-  status: string
-  storedMatchCount: number
-}
-
-type EmailDeliveryResult = {
+type EmailRetryResult = {
   failed: number
-  failures: {
-    error: string
-    notificationId: number
-    recipient: string | null
-  }[]
   processed: number
   sent: number
   skipped: number
 }
 
+function toLocalDateTimeInputValue(date: Date) {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  const day = `${date.getDate()}`.padStart(2, '0')
+  const hours = `${date.getHours()}`.padStart(2, '0')
+  const minutes = `${date.getMinutes()}`.padStart(2, '0')
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
+function formatEventDate(value: string) {
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'full',
+    timeStyle: 'short',
+    timeZone: 'America/New_York',
+  }).format(new Date(value))
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const [email, setEmail] = useState<string | null>(null)
+  const [events, setEvents] = useState<AdminEvent[]>([])
   const [loading, setLoading] = useState(true)
-  const [emailDeliveryResult, setEmailDeliveryResult] =
-    useState<EmailDeliveryResult | null>(null)
-  const [emailSending, setEmailSending] = useState(false)
-  const [running, setRunning] = useState<RunIntent | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [retryingEmails, setRetryingEmails] = useState(false)
   const [error, setError] = useState('')
-  const [results, setResults] = useState<MatchRunResult[] | null>(null)
-  const [summaries, setSummaries] = useState<AdminRoundSummary[] | null>(null)
-  const roundDate = getUpcomingWednesdayDate()
-  const formattedRoundDate = formatRoundDate(roundDate)
+  const [success, setSuccess] = useState('')
+  const [emailResult, setEmailResult] = useState<EmailRetryResult | null>(null)
+
+  const [title, setTitle] = useState('')
+  const [intent, setIntent] = useState<EventIntent>('dating')
+  const [startsAt, setStartsAt] = useState(
+    toLocalDateTimeInputValue(new Date(Date.now() + 48 * 60 * 60 * 1000))
+  )
+  const [restaurantName, setRestaurantName] = useState('')
+  const [restaurantSubregion, setRestaurantSubregion] =
+    useState<(typeof MANHATTAN_SUBREGIONS)[number]>('Midtown')
+  const [restaurantNeighbourhood, setRestaurantNeighbourhood] = useState('')
+  const [restaurantCuisines, setRestaurantCuisines] = useState('')
+  const [capacity, setCapacity] = useState('12')
+  const [description, setDescription] = useState('')
 
   useEffect(() => {
     let active = true
 
-    async function loadUser() {
+    async function loadAdmin() {
       const {
         data: { user },
       } = await supabase.auth.getUser()
@@ -91,63 +95,105 @@ export default function AdminPage() {
       const {
         data: { session },
       } = await supabase.auth.getSession()
-
       const accessToken = session?.access_token
 
-      if (accessToken) {
-        const response = await fetch(`/api/run-weekly-match?roundDate=${roundDate}`, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        })
-
-        const payload = (await response.json()) as {
-          error?: string
-          summaries?: AdminRoundSummary[]
-        }
-
-        if (!active) {
-          return
-        }
-
-        if (response.ok) {
-          setSummaries(payload.summaries ?? null)
-        } else {
-          setError(payload.error ?? 'Failed to load round summaries.')
-        }
+      if (!accessToken) {
+        setError('Missing active session. Log in again.')
+        setLoading(false)
+        return
       }
 
+      const response = await fetch('/api/admin/events', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      })
+
+      const payload = (await response.json()) as {
+        error?: string
+        events?: AdminEvent[]
+      }
+
+      if (!active) {
+        return
+      }
+
+      if (!response.ok || payload.error) {
+        setError(payload.error ?? 'Could not load admin events.')
+        setLoading(false)
+        return
+      }
+
+      setEvents(payload.events ?? [])
       setLoading(false)
     }
 
-    void loadUser()
+    void loadAdmin()
 
     return () => {
       active = false
     }
-  }, [roundDate, router])
+  }, [router])
 
-  async function runRound(intent: RunIntent) {
-    setRunning(intent)
+  async function refreshEvents() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const accessToken = session?.access_token
+
+    if (!accessToken) {
+      setError('Missing active session. Log in again.')
+      return
+    }
+
+    const response = await fetch('/api/admin/events', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
+    const payload = (await response.json()) as {
+      error?: string
+      events?: AdminEvent[]
+    }
+
+    if (!response.ok || payload.error) {
+      setError(payload.error ?? 'Could not refresh admin events.')
+      return
+    }
+
+    setEvents(payload.events ?? [])
+  }
+
+  async function createEvent(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
     setError('')
-    setResults(null)
+    setSuccess('')
+    setSubmitting(true)
+    setEmailResult(null)
 
     const {
       data: { session },
     } = await supabase.auth.getSession()
-
     const accessToken = session?.access_token
 
     if (!accessToken) {
-      setError('Missing active session. Log in again before running matches.')
-      setRunning(null)
+      setError('Missing active session. Log in again.')
+      setSubmitting(false)
       return
     }
 
-    const response = await fetch('/api/run-weekly-match', {
+    const response = await fetch('/api/admin/events', {
       body: JSON.stringify({
+        capacity: Number(capacity),
+        description,
         intent,
-        roundDate,
+        restaurantCuisines: parseCuisinePreferenceInput(restaurantCuisines),
+        restaurantName,
+        restaurantNeighbourhood,
+        restaurantSubregion,
+        startsAt: new Date(startsAt).toISOString(),
+        title,
       }),
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -158,54 +204,47 @@ export default function AdminPage() {
 
     const payload = (await response.json()) as {
       error?: string
-      results?: MatchRunResult[]
+      event?: AdminEvent
     }
 
-    if (!response.ok || payload.error) {
-      setError(payload.error ?? 'Failed to run the weekly match.')
-      setRunning(null)
+    if (!response.ok || payload.error || !payload.event) {
+      setError(payload.error ?? 'Failed to create event.')
+      setSubmitting(false)
       return
     }
 
-    setResults(payload.results ?? null)
-
-    const summaryResponse = await fetch(`/api/run-weekly-match?roundDate=${roundDate}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    })
-
-    const summaryPayload = (await summaryResponse.json()) as {
-      error?: string
-      summaries?: AdminRoundSummary[]
-    }
-
-    if (summaryResponse.ok) {
-      setSummaries(summaryPayload.summaries ?? null)
-    }
-
-    setRunning(null)
+    setSuccess('Event created.')
+    setSubmitting(false)
+    setTitle('')
+    setRestaurantName('')
+    setRestaurantNeighbourhood('')
+    setRestaurantCuisines('')
+    setDescription('')
+    setCapacity('12')
+    setStartsAt(toLocalDateTimeInputValue(new Date(Date.now() + 48 * 60 * 60 * 1000)))
+    setIntent('dating')
+    setRestaurantSubregion('Midtown')
+    await refreshEvents()
   }
 
-  async function sendPendingEmails() {
-    setEmailSending(true)
-    setEmailDeliveryResult(null)
+  async function retryFailedEmails() {
+    setRetryingEmails(true)
+    setEmailResult(null)
     setError('')
 
     const {
       data: { session },
     } = await supabase.auth.getSession()
-
     const accessToken = session?.access_token
 
     if (!accessToken) {
-      setError('Missing active session. Log in again before sending emails.')
-      setEmailSending(false)
+      setError('Missing active session. Log in again.')
+      setRetryingEmails(false)
       return
     }
 
     const response = await fetch('/api/send-notification-emails', {
-      body: JSON.stringify({ limit: 20 }),
+      body: JSON.stringify({ limit: 40 }),
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
@@ -215,85 +254,48 @@ export default function AdminPage() {
 
     const payload = (await response.json()) as {
       error?: string
-    } & Partial<EmailDeliveryResult>
+      failed?: number
+      processed?: number
+      sent?: number
+      skipped?: number
+    }
 
     if (!response.ok || payload.error) {
-      setError(payload.error ?? 'Failed to send pending notification emails.')
-      setEmailSending(false)
+      setError(payload.error ?? 'Failed to retry notification emails.')
+      setRetryingEmails(false)
       return
     }
 
-    setEmailDeliveryResult({
+    setEmailResult({
       failed: payload.failed ?? 0,
-      failures: payload.failures ?? [],
       processed: payload.processed ?? 0,
       sent: payload.sent ?? 0,
       skipped: payload.skipped ?? 0,
     })
-    setEmailSending(false)
+    setRetryingEmails(false)
   }
 
   if (loading) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-4xl items-center px-8">
-        <p className="text-sm text-zinc-600">Checking admin access...</p>
+      <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-8">
+        <p className="text-sm text-zinc-600">Loading admin tools...</p>
       </main>
     )
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-4xl px-8 py-16">
-      <div className="max-w-2xl">
-        <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
-          Admin
-        </p>
-        <h1 className="mt-3 text-4xl font-semibold text-zinc-950">
-          Run the {formattedRoundDate} match rounds
-        </h1>
-        <p className="mt-4 text-base text-zinc-600">
-          Logged in as <span className="font-medium text-zinc-950">{email}</span>.
-          This only works when `ADMIN_EMAIL` and `SUPABASE_SERVICE_ROLE_KEY` are
-          configured. Without that, you do not have an admin system, you have a
-          demo button.
-        </p>
-      </div>
-
-      <div className="mt-10 flex flex-wrap gap-3">
-        <button
-          className="rounded-xl bg-zinc-950 px-5 py-3 font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-          disabled={running !== null}
-          onClick={() => void runRound('all')}
-          type="button"
-        >
-          {running === 'all' ? 'Running all rounds...' : 'Run all'}
-        </button>
-        <button
-          className="rounded-xl border border-zinc-950 px-5 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
-          disabled={running !== null}
-          onClick={() => void runRound('dating')}
-          type="button"
-        >
-          {running === 'dating' ? 'Running dating...' : 'Run dating'}
-        </button>
-        <button
-          className="rounded-xl border border-zinc-950 px-5 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
-          disabled={running !== null}
-          onClick={() => void runRound('friendship')}
-          type="button"
-        >
-          {running === 'friendship'
-            ? 'Running friendship...'
-            : 'Run friendship'}
-        </button>
-        <button
-          className="rounded-xl border border-zinc-950 px-5 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
-          disabled={emailSending || running !== null}
-          onClick={() => void sendPendingEmails()}
-          type="button"
-        >
-          {emailSending ? 'Sending emails...' : 'Send pending emails'}
-        </button>
-      </div>
+    <main className="mx-auto min-h-screen w-full max-w-6xl px-8 py-14">
+      <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
+        Admin
+      </p>
+      <h1 className="mt-3 text-4xl font-semibold text-zinc-950">
+        Create restaurant events
+      </h1>
+      <p className="mt-4 max-w-3xl text-base text-zinc-600">
+        Logged in as <span className="font-medium text-zinc-950">{email}</span>.
+        Matching rounds are retired. Admins now create explicit events and users
+        opt in directly.
+      </p>
 
       {error ? (
         <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -301,138 +303,217 @@ export default function AdminPage() {
         </div>
       ) : null}
 
-      {emailDeliveryResult ? (
+      {success ? (
+        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          {success}
+        </div>
+      ) : null}
+
+      {emailResult ? (
         <div className="mt-6 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
-          Email run processed {emailDeliveryResult.processed} notification
-          {emailDeliveryResult.processed === 1 ? '' : 's'}: sent{' '}
-          {emailDeliveryResult.sent}, failed {emailDeliveryResult.failed},
-          skipped {emailDeliveryResult.skipped}.
-          {emailDeliveryResult.failures.length > 0 ? (
-            <ul className="mt-3 space-y-2 text-red-700">
-              {emailDeliveryResult.failures.map((failure) => (
-                <li key={failure.notificationId}>
-                  Notification {failure.notificationId}
-                  {failure.recipient ? ` to ${failure.recipient}` : ''}:{' '}
-                  {failure.error}
-                </li>
+          Email retry processed {emailResult.processed}: sent {emailResult.sent},
+          failed {emailResult.failed}, skipped {emailResult.skipped}.
+        </div>
+      ) : null}
+
+      <section className="mt-8 rounded-[1.75rem] border border-zinc-200 bg-zinc-50 p-6">
+        <h2 className="text-xl font-semibold text-zinc-950">New event</h2>
+        <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={createEvent}>
+          <label className="space-y-2 sm:col-span-2">
+            <span className="text-sm font-medium text-zinc-700">Event title</span>
+            <input
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(nextEvent) => setTitle(nextEvent.target.value)}
+              placeholder="Wednesday West Village Supper Club"
+              required
+              value={title}
+            />
+          </label>
+
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-700">Intent</span>
+            <select
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(nextEvent) =>
+                setIntent(nextEvent.target.value as EventIntent)
+              }
+              value={intent}
+            >
+              <option value="dating">Dating</option>
+              <option value="friendship">Friendship</option>
+            </select>
+          </label>
+
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-700">Starts at</span>
+            <input
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(nextEvent) => setStartsAt(nextEvent.target.value)}
+              required
+              type="datetime-local"
+              value={startsAt}
+            />
+          </label>
+
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-700">
+              Restaurant name
+            </span>
+            <input
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(nextEvent) => setRestaurantName(nextEvent.target.value)}
+              placeholder="L'Artusi"
+              required
+              value={restaurantName}
+            />
+          </label>
+
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-700">Subregion</span>
+            <select
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(nextEvent) =>
+                setRestaurantSubregion(
+                  nextEvent.target.value as (typeof MANHATTAN_SUBREGIONS)[number]
+                )
+              }
+              value={restaurantSubregion}
+            >
+              {MANHATTAN_SUBREGIONS.map((subregion) => (
+                <option key={subregion} value={subregion}>
+                  {subregion}
+                </option>
               ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
+            </select>
+          </label>
 
-      {results ? (
-        <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          {results.map((result) => (
-            <div
-              key={result.intent}
-              className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-6"
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-700">
+              Neighbourhood
+            </span>
+            <input
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(nextEvent) =>
+                setRestaurantNeighbourhood(nextEvent.target.value)
+              }
+              placeholder="West Village"
+              value={restaurantNeighbourhood}
+            />
+          </label>
+
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-700">Capacity</span>
+            <input
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              min={2}
+              onChange={(nextEvent) => setCapacity(nextEvent.target.value)}
+              required
+              type="number"
+              value={capacity}
+            />
+          </label>
+
+          <label className="space-y-2 sm:col-span-2">
+            <span className="text-sm font-medium text-zinc-700">Cuisine tags</span>
+            <input
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(nextEvent) => setRestaurantCuisines(nextEvent.target.value)}
+              placeholder="Italian, Pasta, Wine bar"
+              value={restaurantCuisines}
+            />
+          </label>
+
+          <label className="space-y-2 sm:col-span-2">
+            <span className="text-sm font-medium text-zinc-700">Description</span>
+            <textarea
+              className="min-h-24 w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(nextEvent) => setDescription(nextEvent.target.value)}
+              placeholder="Optional context shown on the dashboard."
+              value={description}
+            />
+          </label>
+
+          <div className="flex flex-wrap gap-3 sm:col-span-2">
+            <button
+              className="rounded-xl bg-zinc-950 px-5 py-3 font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+              disabled={submitting}
+              type="submit"
             >
-              <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-                {result.intent}
-              </p>
-              <p className="mt-3 text-2xl font-semibold text-zinc-950">
-                {result.matchCount} matches
-              </p>
-              <p className="mt-2 text-sm text-zinc-600">
-                {result.participantCount} eligible participants in round{' '}
-                {result.roundId}
-              </p>
-              <p className="mt-2 text-sm text-zinc-600">
-                {result.blockedPairCount} prior pair
-                {result.blockedPairCount === 1 ? '' : 's'} blocked from rematch
-              </p>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      {summaries ? (
-        <div className="mt-8 grid gap-6 lg:grid-cols-2">
-          {summaries.map((summary) => (
-            <section
-              key={summary.intent}
-              className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-6"
+              {submitting ? 'Creating event...' : 'Create event'}
+            </button>
+            <button
+              className="rounded-xl border border-zinc-950 px-5 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+              disabled={retryingEmails}
+              onClick={() => void retryFailedEmails()}
+              type="button"
             >
-              <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-                {summary.intent} round detail
-              </p>
-              <p className="mt-3 text-base text-zinc-700">
-                Round ID:{' '}
-                <span className="font-medium text-zinc-950">
-                  {summary.roundId ?? 'not created'}
-                </span>
-              </p>
-              <p className="mt-2 text-base text-zinc-700">
-                Status:{' '}
-                <span className="font-medium text-zinc-950">{summary.status}</span>
-              </p>
-              <p className="mt-2 text-base text-zinc-700">
-                Participants:{' '}
-                <span className="font-medium text-zinc-950">
-                  {summary.participantCount}
-                </span>
-              </p>
-              <p className="mt-2 text-base text-zinc-700">
-                Stored matches:{' '}
-                <span className="font-medium text-zinc-950">
-                  {summary.storedMatchCount}
-                </span>
-              </p>
-              <p className="mt-2 text-base text-zinc-700">
-                Prior pairs blocked:{' '}
-                <span className="font-medium text-zinc-950">
-                  {summary.blockedHistoricalPairCount}
-                </span>
-              </p>
+              {retryingEmails ? 'Retrying emails...' : 'Retry failed emails'}
+            </button>
+          </div>
+        </form>
+      </section>
 
-              <div className="mt-5">
-                <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-                  Eligible participants
-                </p>
-                {summary.participants.length > 0 ? (
-                  <ul className="mt-3 space-y-2 text-sm text-zinc-700">
-                    {summary.participants.map((participant) => (
-                      <li key={participant.id}>
-                        {(participant.displayName ?? 'Unnamed user') +
-                          (participant.subregion ? `, ${participant.subregion}` : '') +
-                          (participant.neighbourhood
-                            ? `, ${participant.neighbourhood}`
-                            : '')}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-sm text-zinc-600">
-                    No eligible participants.
+      <section className="mt-8">
+        <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
+          Upcoming events
+        </p>
+        <div className="mt-4 grid gap-4">
+          {events.length > 0 ? (
+            events.map((event) => (
+              <article
+                className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-6"
+                key={event.id}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
+                      {event.intent}
+                    </p>
+                    <h3 className="mt-2 text-2xl font-semibold text-zinc-950">
+                      {event.title}
+                    </h3>
+                    <p className="mt-2 text-sm text-zinc-700">
+                      {event.restaurant_name} · {event.restaurant_subregion}
+                      {event.restaurant_neighbourhood
+                        ? `, ${event.restaurant_neighbourhood}`
+                        : ''}
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-700">
+                      {formatEventDate(event.starts_at)}
+                    </p>
+                    {event.restaurant_cuisines?.length ? (
+                      <p className="mt-1 text-sm text-zinc-600">
+                        {event.restaurant_cuisines.join(', ')}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
+                    <p>
+                      Attendees:{' '}
+                      <span className="font-medium text-zinc-950">
+                        {event.attendeeCount}/{event.capacity}
+                      </span>
+                    </p>
+                    <p className="mt-1">
+                      Status:{' '}
+                      <span className="font-medium text-zinc-950">{event.status}</span>
+                    </p>
+                  </div>
+                </div>
+                {event.description ? (
+                  <p className="mt-4 text-sm leading-7 text-zinc-600">
+                    {event.description}
                   </p>
-                )}
-              </div>
-
-              <div className="mt-5">
-                <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-                  Created matches
-                </p>
-                {summary.matches.length > 0 ? (
-                  <ul className="mt-3 space-y-3 text-sm text-zinc-700">
-                    {summary.matches.map((match) => (
-                      <li key={match.id}>
-                        <span className="font-medium text-zinc-950">
-                          {match.userAName ?? 'Unknown'} x {match.userBName ?? 'Unknown'}
-                        </span>{' '}
-                        ({match.status}, score {match.score})
-                        {match.rationale ? `: ${match.rationale}` : ''}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-3 text-sm text-zinc-600">No matches created.</p>
-                )}
-              </div>
-            </section>
-          ))}
+                ) : null}
+              </article>
+            ))
+          ) : (
+            <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-6 text-sm text-zinc-600">
+              No events yet. Create one to let users self-enroll.
+            </div>
+          )}
         </div>
-      ) : null}
+      </section>
     </main>
   )
 }

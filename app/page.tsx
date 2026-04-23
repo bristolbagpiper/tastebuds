@@ -10,7 +10,7 @@ export default function Home() {
               TasteBuds
             </p>
             <p className="mt-2 text-sm text-zinc-600">
-              Weekly Manhattan matching, built one solid layer at a time.
+              Manhattan restaurant events with profile-based fit scoring.
             </p>
           </div>
           <div className="flex gap-3">
@@ -35,13 +35,13 @@ export default function Home() {
               Manhattan pilot
             </p>
             <h1 className="mt-5 max-w-3xl text-5xl font-semibold tracking-tight text-balance sm:text-6xl">
-              Match people for Wednesdays in Manhattan without pretending the AI
-              is the product.
+              Create events at real restaurants and let people choose their
+              table.
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-zinc-600">
-              This first cut is deliberately narrow: email auth, Google auth,
-              protected dashboard, then profile onboarding and weekly match runs.
-              No swiping theatre. No fake intelligence glued onto a broken app.
+              Admins publish specific events. Users opt in directly. The app
+              scores restaurant fit from cuisine preferences and personal fit
+              from attendee overlap so signups feel intentional, not random.
             </p>
           </div>
 
@@ -50,13 +50,13 @@ export default function Home() {
               Current milestone
             </p>
             <h2 className="mt-4 text-2xl font-semibold">
-              Auth first, matchmaking second.
+              Event model first, automation second.
             </h2>
             <ul className="mt-6 space-y-3 text-sm text-zinc-300">
-              <li>Email sign-up and login</li>
-              <li>Google OAuth entry point</li>
-              <li>Supabase-backed session checks</li>
-              <li>Callback route for confirmation redirects</li>
+              <li>Admin-created restaurant events</li>
+              <li>User self-signup and attendance caps</li>
+              <li>Restaurant and attendee fit scores</li>
+              <li>Automatic notification email delivery</li>
             </ul>
           </div>
         </section>

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
-import { getUpcomingWednesdayDate } from '@/lib/rounds'
+import { parseCuisinePreferenceInput } from '@/lib/events'
 import { supabase } from '@/lib/supabase/client'
 
 const SUBREGIONS = ['Uptown', 'Midtown', 'Downtown'] as const
@@ -13,6 +13,7 @@ const INTENTS = ['dating', 'friendship'] as const
 
 type Profile = {
   bio: string | null
+  cuisine_preferences: string[] | null
   display_name: string | null
   intent: string | null
   max_travel_minutes: number | null
@@ -31,10 +32,10 @@ export default function OnboardingPage() {
   const [maxTravelMinutes, setMaxTravelMinutes] =
     useState<(typeof TRAVEL_WINDOWS)[number]>(30)
   const [bio, setBio] = useState('')
+  const [cuisinePreferences, setCuisinePreferences] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const roundDate = getUpcomingWednesdayDate()
 
   useEffect(() => {
     let active = true
@@ -58,7 +59,7 @@ export default function OnboardingPage() {
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select(
-          'bio, display_name, intent, max_travel_minutes, neighbourhood, subregion'
+          'bio, cuisine_preferences, display_name, intent, max_travel_minutes, neighbourhood, subregion'
         )
         .eq('id', user.id)
         .maybeSingle()
@@ -104,6 +105,7 @@ export default function OnboardingPage() {
           : 30
       )
       setBio(profile.bio ?? '')
+      setCuisinePreferences((profile.cuisine_preferences ?? []).join(', '))
     }
 
     void loadProfile()
@@ -128,48 +130,20 @@ export default function OnboardingPage() {
       id: userId,
       bio: bio.trim() || null,
       city: 'New York City',
-      display_name: displayName.trim(),
-      intent,
-      max_travel_minutes: maxTravelMinutes,
-      neighbourhood: neighbourhood.trim() || null,
-      region: 'Manhattan',
-      subregion,
-    })
+        display_name: displayName.trim(),
+        intent,
+        max_travel_minutes: maxTravelMinutes,
+        neighbourhood: neighbourhood.trim() || null,
+        region: 'Manhattan',
+        cuisine_preferences: parseCuisinePreferenceInput(cuisinePreferences),
+        subregion,
+      })
 
     setSaving(false)
 
     if (upsertError) {
       setError(upsertError.message)
       return
-    }
-
-    const { data: currentAvailability } = await supabase
-      .from('availability')
-      .select('available')
-      .eq('user_id', userId)
-      .eq('round_date', roundDate)
-      .maybeSingle<{ available: boolean }>()
-
-    if (currentAvailability) {
-      const { error: availabilitySyncError } = await supabase
-        .from('availability')
-        .upsert(
-          {
-            available: currentAvailability.available,
-            intent,
-            round_date: roundDate,
-            user_id: userId,
-          },
-          {
-            onConflict: 'user_id,round_date',
-          }
-        )
-
-      if (availabilitySyncError) {
-        setSaving(false)
-        setError(availabilitySyncError.message)
-        return
-      }
     }
 
     router.replace('/dashboard')
@@ -193,7 +167,7 @@ export default function OnboardingPage() {
           Set up your Manhattan profile
         </h1>
         <p className="mt-4 text-base text-zinc-600">
-          Keep this lean. The point is to capture useful match constraints, not
+          Keep this lean. The point is to capture useful event preferences, not
           invent personality theatre before the basics exist.
         </p>
       </div>
@@ -251,7 +225,7 @@ export default function OnboardingPage() {
             >
               {INTENTS.map((option) => (
                 <option key={option} value={option}>
-                  {option[0].toUpperCase() + option.slice(1)}
+                  {option[0].toUpperCase() + option.slice(1)} preference
                 </option>
               ))}
             </select>
@@ -276,6 +250,21 @@ export default function OnboardingPage() {
             </select>
           </label>
         </div>
+
+        <label className="block space-y-2">
+          <span className="text-sm font-medium text-zinc-700">
+            Cuisine preferences
+          </span>
+          <input
+            className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+            value={cuisinePreferences}
+            onChange={(event) => setCuisinePreferences(event.target.value)}
+            placeholder="Italian, Japanese, Thai"
+          />
+          <span className="text-xs text-zinc-500">
+            Comma-separated. Used for restaurant and attendee fit scoring.
+          </span>
+        </label>
 
         <label className="block space-y-2">
           <span className="text-sm font-medium text-zinc-700">Short bio</span>

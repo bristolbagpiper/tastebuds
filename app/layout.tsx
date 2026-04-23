@@ -4,7 +4,7 @@ import './globals.css'
 
 export const metadata: Metadata = {
   title: 'TasteBuds',
-  description: 'Weekly Manhattan matching with Supabase authentication.',
+  description: 'Manhattan restaurant events with profile-based fit scores.',
 }
 
 export default function RootLayout({
