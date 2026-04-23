@@ -261,6 +261,8 @@ create table if not exists public.events (
   title text not null,
   intent text not null check (intent in ('dating', 'friendship')),
   starts_at timestamptz not null,
+  duration_minutes integer not null default 120 check (duration_minutes >= 30 and duration_minutes <= 360),
+  minimum_viable_attendees integer not null default 2 check (minimum_viable_attendees >= 2 and minimum_viable_attendees <= capacity),
   restaurant_name text not null,
   restaurant_subregion text not null check (restaurant_subregion in ('Uptown', 'Midtown', 'Downtown')),
   restaurant_neighbourhood text,
@@ -292,6 +294,8 @@ create table if not exists public.event_signups (
   event_id bigint not null references public.events(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
   status text not null default 'going' check (status in ('going', 'cancelled', 'removed', 'no_show')),
+  day_of_confirmation_status text not null default 'pending' check (day_of_confirmation_status in ('pending', 'confirmed', 'declined')),
+  day_of_confirmation_at timestamptz,
   restaurant_match_score integer not null default 0 check (restaurant_match_score >= 0 and restaurant_match_score <= 100),
   personal_match_score integer not null default 0 check (personal_match_score >= 0 and personal_match_score <= 100),
   personal_match_summary text,
@@ -334,7 +338,7 @@ drop constraint if exists event_signups_status_check;
 
 alter table public.event_signups
 add constraint event_signups_status_check
-check (status in ('going', 'cancelled', 'removed', 'no_show'));
+check (status in ('going', 'waitlisted', 'cancelled', 'removed', 'no_show', 'attended'));
 
 alter table public.notifications
 add column if not exists event_id bigint references public.events(id) on delete cascade;
@@ -346,13 +350,15 @@ alter table public.notifications
 add constraint notifications_type_check
 check (
   type in (
-    'match_proposed',
-    'match_accepted',
-    'match_confirmed',
-    'match_declined',
     'event_signup',
     'event_update',
-    'event_reminder'
+    'event_reminder_24h',
+    'event_reminder_2h',
+    'event_follow_up',
+    'event_waitlist',
+    'event_promoted',
+    'event_attendance',
+    'event_day_confirmation'
   )
 );
 
@@ -386,10 +392,10 @@ declare
   v_existing_status text;
   v_attendee_count integer;
 begin
-  select capacity, status
+  select e.capacity, e.status
   into v_event_capacity, v_event_status
-  from public.events
-  where id = p_event_id
+  from public.events as e
+  where e.id = p_event_id
   for update;
 
   if not found then
@@ -402,36 +408,63 @@ begin
     return;
   end if;
 
-  select status
+  select es.status
   into v_existing_status
-  from public.event_signups
-  where event_id = p_event_id
-    and user_id = p_user_id
+  from public.event_signups as es
+  where es.event_id = p_event_id
+    and es.user_id = p_user_id
   for update;
 
-  if coalesce(v_existing_status, '') = 'going' then
-    return query select true, 'going', null::text;
+  if coalesce(v_existing_status, '') in ('going', 'waitlisted') then
+    return query select true, v_existing_status, null::text;
     return;
   end if;
 
   select count(*)
   into v_attendee_count
-  from public.event_signups
-  where event_id = p_event_id
-    and status = 'going';
+  from public.event_signups as es
+  where es.event_id = p_event_id
+    and es.status = 'going';
 
   if v_attendee_count >= v_event_capacity then
-    return query select false, 'full', 'This event is already full.';
+    insert into public.event_signups (
+      day_of_confirmation_at,
+      day_of_confirmation_status,
+      event_id,
+      status,
+      updated_at,
+      user_id
+    )
+    values (
+      null,
+      'pending',
+      p_event_id,
+      'waitlisted',
+      timezone('utc', now()),
+      p_user_id
+    )
+    on conflict (event_id, user_id)
+    do update set
+      day_of_confirmation_at = null,
+      day_of_confirmation_status = 'pending',
+      status = 'waitlisted',
+      updated_at = excluded.updated_at;
+
+    return query select true, 'waitlisted', null::text;
     return;
   end if;
 
   insert into public.event_signups (
+    day_of_confirmation_at,
+    day_of_confirmation_status,
     event_id,
     status,
     updated_at,
     user_id
   )
   values (
+    null,
+    'pending',
     p_event_id,
     'going',
     timezone('utc', now()),
@@ -439,6 +472,8 @@ begin
   )
   on conflict (event_id, user_id)
   do update set
+    day_of_confirmation_at = null,
+    day_of_confirmation_status = 'pending',
     status = 'going',
     updated_at = excluded.updated_at;
 
@@ -471,4 +506,16 @@ drop constraint if exists notifications_type_check;
 
 alter table public.notifications
 add constraint notifications_type_check
-check (type in ('event_signup', 'event_update', 'event_reminder'));
+check (
+  type in (
+    'event_signup',
+    'event_update',
+    'event_reminder_24h',
+    'event_reminder_2h',
+    'event_follow_up',
+    'event_waitlist',
+    'event_promoted',
+    'event_attendance',
+    'event_day_confirmation'
+  )
+);

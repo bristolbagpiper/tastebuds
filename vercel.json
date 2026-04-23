@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/send-notification-emails?limit=60",
+      "path": "/api/run-event-automation",
       "schedule": "0 14 * * *"
     },
     {

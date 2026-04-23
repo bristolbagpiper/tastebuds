@@ -3,22 +3,30 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
+import { hasEventStarted } from '@/lib/event-time'
 import { MANHATTAN_SUBREGIONS, parseCuisinePreferenceInput } from '@/lib/events'
 import { supabase } from '@/lib/supabase/client'
 
 type EventIntent = 'dating' | 'friendship'
 type EventAction = 'cancel' | 'close' | 'reopen' | 'update'
-type AttendeeAction = 'mark-no-show' | 'remove' | 'restore'
+type AttendeeAction = 'mark-attended' | 'mark-no-show' | 'remove' | 'restore'
 
 type AdminEventAttendee = {
   cuisine_preferences: string[] | null
+  day_of_confirmation_status: 'pending' | 'confirmed' | 'declined'
   display_name: string | null
   email: string | null
   neighbourhood: string | null
   personal_match_score: number
   personal_match_summary: string | null
   restaurant_match_score: number
-  signup_status: 'cancelled' | 'going' | 'no_show' | 'removed'
+  signup_status:
+    | 'attended'
+    | 'cancelled'
+    | 'going'
+    | 'no_show'
+    | 'removed'
+    | 'waitlisted'
   subregion: string | null
   user_id: string
 }
@@ -26,11 +34,17 @@ type AdminEventAttendee = {
 type AdminEvent = {
   attendeeCount: number
   attendees: AdminEventAttendee[]
+  attendedCount: number
   capacity: number
+  confirmedTodayCount: number
   created_at: string
   description: string | null
+  dropoffCount: number
+  duration_minutes: number
   id: number
   intent: EventIntent
+  minimum_viable_attendees: number
+  noShowCount: number
   restaurant_cuisines: string[]
   restaurant_name: string
   restaurant_neighbourhood: string | null
@@ -38,6 +52,7 @@ type AdminEvent = {
   starts_at: string
   status: 'open' | 'closed' | 'cancelled'
   title: string
+  waitlistCount: number
 }
 
 type EmailRetryResult = {
@@ -45,6 +60,25 @@ type EmailRetryResult = {
   processed: number
   sent: number
   skipped: number
+}
+
+type AdminSummary = {
+  averageFillRate: number
+  openEvents: number
+  totalDayConfirmed: number
+  totalAttended: number
+  totalConfirmed: number
+  totalDropped: number
+  totalEvents: number
+  totalNoShows: number
+  totalWaitlisted: number
+}
+
+type AutomationResult = {
+  dayConfirmations: number
+  followUps: number
+  reminders24h: number
+  reminders2h: number
 }
 
 function toLocalDateTimeInputValue(date: Date) {
@@ -87,6 +121,10 @@ function formatSignupStatus(status: AdminEventAttendee['signup_status']) {
   switch (status) {
     case 'going':
       return 'Going'
+    case 'waitlisted':
+      return 'Waitlisted'
+    case 'attended':
+      return 'Attended'
     case 'no_show':
       return 'No-show'
     case 'removed':
@@ -96,13 +134,28 @@ function formatSignupStatus(status: AdminEventAttendee['signup_status']) {
   }
 }
 
+function formatDayConfirmationStatus(
+  status: AdminEventAttendee['day_of_confirmation_status']
+) {
+  switch (status) {
+    case 'confirmed':
+      return 'Confirmed today'
+    case 'declined':
+      return 'Declined today'
+    default:
+      return 'Pending today'
+  }
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const [email, setEmail] = useState<string | null>(null)
   const [events, setEvents] = useState<AdminEvent[]>([])
+  const [summary, setSummary] = useState<AdminSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [retryingEmails, setRetryingEmails] = useState(false)
+  const [runningAutomation, setRunningAutomation] = useState(false)
   const [eventActionLoadingId, setEventActionLoadingId] = useState<number | null>(
     null
   )
@@ -110,6 +163,9 @@ export default function AdminPage() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [emailResult, setEmailResult] = useState<EmailRetryResult | null>(null)
+  const [automationResult, setAutomationResult] = useState<AutomationResult | null>(
+    null
+  )
   const [editingEventId, setEditingEventId] = useState<number | null>(null)
 
   const [title, setTitle] = useState('')
@@ -121,6 +177,8 @@ export default function AdminPage() {
   const [restaurantNeighbourhood, setRestaurantNeighbourhood] = useState('')
   const [restaurantCuisines, setRestaurantCuisines] = useState('')
   const [capacity, setCapacity] = useState('12')
+  const [minimumViableAttendees, setMinimumViableAttendees] = useState('2')
+  const [durationMinutes, setDurationMinutes] = useState('120')
   const [description, setDescription] = useState('')
 
   useEffect(() => {
@@ -162,6 +220,7 @@ export default function AdminPage() {
       const payload = (await response.json()) as {
         error?: string
         events?: AdminEvent[]
+        summary?: AdminSummary
       }
 
       if (!active) {
@@ -175,6 +234,7 @@ export default function AdminPage() {
       }
 
       setEvents(payload.events ?? [])
+      setSummary(payload.summary ?? null)
       setLoading(false)
     }
 
@@ -210,6 +270,7 @@ export default function AdminPage() {
     const payload = (await response.json()) as {
       error?: string
       events?: AdminEvent[]
+      summary?: AdminSummary
     }
 
     if (!response.ok || payload.error) {
@@ -218,6 +279,7 @@ export default function AdminPage() {
     }
 
     setEvents(payload.events ?? [])
+    setSummary(payload.summary ?? null)
   }
 
   function resetEventForm() {
@@ -230,6 +292,8 @@ export default function AdminPage() {
     setRestaurantNeighbourhood('')
     setRestaurantCuisines('')
     setCapacity('12')
+    setMinimumViableAttendees('2')
+    setDurationMinutes('120')
     setDescription('')
   }
 
@@ -247,6 +311,8 @@ export default function AdminPage() {
     setRestaurantNeighbourhood(nextEvent.restaurant_neighbourhood ?? '')
     setRestaurantCuisines(nextEvent.restaurant_cuisines.join(', '))
     setCapacity(String(nextEvent.capacity))
+    setMinimumViableAttendees(String(nextEvent.minimum_viable_attendees))
+    setDurationMinutes(String(nextEvent.duration_minutes))
     setDescription(nextEvent.description ?? '')
   }
 
@@ -269,8 +335,10 @@ export default function AdminPage() {
       action: 'update' as EventAction,
       capacity: Number(capacity),
       description,
+      durationMinutes: Number(durationMinutes),
       eventId: editingEventId,
       intent,
+      minimumViableAttendees: Number(minimumViableAttendees),
       restaurantCuisines: parseCuisinePreferenceInput(restaurantCuisines),
       restaurantName,
       restaurantNeighbourhood,
@@ -403,9 +471,11 @@ export default function AdminPage() {
     setSuccess(
       action === 'remove'
         ? 'Attendee removed.'
+        : action === 'mark-attended'
+          ? 'Attendee marked as attended.'
         : action === 'mark-no-show'
           ? 'Attendee marked as no-show.'
-          : 'Attendee restored.'
+          : 'Attendee reinstated.'
     )
     setAttendeeActionKey(null)
     await refreshEvents()
@@ -456,6 +526,49 @@ export default function AdminPage() {
     setRetryingEmails(false)
   }
 
+  async function runAutomation() {
+    setRunningAutomation(true)
+    setAutomationResult(null)
+    setError('')
+
+    const accessToken = await getAccessToken()
+
+    if (!accessToken) {
+      setError('Missing active session. Log in again.')
+      setRunningAutomation(false)
+      return
+    }
+
+    const response = await fetch('/api/run-event-automation', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      method: 'POST',
+    })
+
+    const payload = (await response.json()) as {
+      dayConfirmations?: number
+      error?: string
+      followUps?: number
+      reminders24h?: number
+      reminders2h?: number
+    }
+
+    if (!response.ok || payload.error) {
+      setError(payload.error ?? 'Failed to run event automation.')
+      setRunningAutomation(false)
+      return
+    }
+
+    setAutomationResult({
+      dayConfirmations: payload.dayConfirmations ?? 0,
+      followUps: payload.followUps ?? 0,
+      reminders24h: payload.reminders24h ?? 0,
+      reminders2h: payload.reminders2h ?? 0,
+    })
+    setRunningAutomation(false)
+  }
+
   if (loading) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-8">
@@ -495,6 +608,67 @@ export default function AdminPage() {
           Email retry processed {emailResult.processed}: sent {emailResult.sent},
           failed {emailResult.failed}, skipped {emailResult.skipped}.
         </div>
+      ) : null}
+
+      {automationResult ? (
+        <div className="mt-6 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
+          Automation queued {automationResult.reminders24h} 24h reminders,{' '}
+          {automationResult.reminders2h} 2h reminders,{' '}
+          {automationResult.dayConfirmations} same-day confirmations, and{' '}
+          {automationResult.followUps} follow-ups.
+        </div>
+      ) : null}
+
+      {summary ? (
+        <section className="mt-8 grid gap-4 md:grid-cols-5">
+          <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Events</p>
+            <p className="mt-2 text-3xl font-semibold text-zinc-950">
+              {summary.totalEvents}
+            </p>
+            <p className="mt-1 text-sm text-zinc-600">
+              {summary.openEvents} currently open
+            </p>
+          </div>
+          <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+              Confirmed / waitlist
+            </p>
+            <p className="mt-2 text-3xl font-semibold text-zinc-950">
+              {summary.totalConfirmed} / {summary.totalWaitlisted}
+            </p>
+            <p className="mt-1 text-sm text-zinc-600">Active seats vs queue</p>
+          </div>
+          <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+              Attendance
+            </p>
+            <p className="mt-2 text-3xl font-semibold text-zinc-950">
+              {summary.totalAttended} / {summary.totalNoShows}
+            </p>
+            <p className="mt-1 text-sm text-zinc-600">Attended vs no-show</p>
+          </div>
+          <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+              Confirmed today
+            </p>
+            <p className="mt-2 text-3xl font-semibold text-zinc-950">
+              {summary.totalDayConfirmed}
+            </p>
+            <p className="mt-1 text-sm text-zinc-600">Same-day commitments</p>
+          </div>
+          <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+              Fill rate
+            </p>
+            <p className="mt-2 text-3xl font-semibold text-zinc-950">
+              {summary.averageFillRate}%
+            </p>
+            <p className="mt-1 text-sm text-zinc-600">
+              {summary.totalDropped} dropped signups
+            </p>
+          </div>
+        </section>
       ) : null}
 
       <section className="mt-8 rounded-[1.75rem] border border-zinc-200 bg-zinc-50 p-6">
@@ -596,6 +770,35 @@ export default function AdminPage() {
             />
           </label>
 
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-700">
+              Minimum viable attendees
+            </span>
+            <input
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              min={2}
+              onChange={(nextEvent) =>
+                setMinimumViableAttendees(nextEvent.target.value)
+              }
+              required
+              type="number"
+              value={minimumViableAttendees}
+            />
+          </label>
+
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-700">Duration</span>
+            <input
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              max={360}
+              min={30}
+              onChange={(nextEvent) => setDurationMinutes(nextEvent.target.value)}
+              required
+              type="number"
+              value={durationMinutes}
+            />
+          </label>
+
           <label className="space-y-2 sm:col-span-2">
             <span className="text-sm font-medium text-zinc-700">Cuisine tags</span>
             <input
@@ -647,6 +850,14 @@ export default function AdminPage() {
             >
               {retryingEmails ? 'Retrying emails...' : 'Retry failed emails'}
             </button>
+            <button
+              className="rounded-xl border border-zinc-950 px-5 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+              disabled={runningAutomation}
+              onClick={() => void runAutomation()}
+              type="button"
+            >
+              {runningAutomation ? 'Running automation...' : 'Run reminders now'}
+            </button>
           </div>
         </form>
       </section>
@@ -679,6 +890,9 @@ export default function AdminPage() {
                     <p className="mt-1 text-sm text-zinc-700">
                       {formatEventDate(event.starts_at)}
                     </p>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      Duration: {event.duration_minutes} minutes
+                    </p>
                     {event.restaurant_cuisines?.length ? (
                       <p className="mt-1 text-sm text-zinc-600">
                         {event.restaurant_cuisines.join(', ')}
@@ -696,6 +910,16 @@ export default function AdminPage() {
                       Status:{' '}
                       <span className="font-medium text-zinc-950">{event.status}</span>
                     </p>
+                    <p className="mt-1">
+                      Waitlist:{' '}
+                      <span className="font-medium text-zinc-950">{event.waitlistCount}</span>
+                    </p>
+                    <p className="mt-1">
+                      Today confirmed:{' '}
+                      <span className="font-medium text-zinc-950">
+                        {event.confirmedTodayCount}/{event.minimum_viable_attendees}
+                      </span>
+                    </p>
                   </div>
                 </div>
                 {event.description ? (
@@ -703,6 +927,48 @@ export default function AdminPage() {
                     {event.description}
                   </p>
                 ) : null}
+                <div className="mt-4 grid gap-3 md:grid-cols-5">
+                  <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
+                    <p className="text-xs uppercase tracking-[0.12em] text-zinc-500">
+                      Confirmed
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-zinc-950">
+                      {event.attendeeCount}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
+                    <p className="text-xs uppercase tracking-[0.12em] text-zinc-500">
+                      Waitlist
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-zinc-950">
+                      {event.waitlistCount}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
+                    <p className="text-xs uppercase tracking-[0.12em] text-zinc-500">
+                      Confirmed today
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-zinc-950">
+                      {event.confirmedTodayCount}/{event.minimum_viable_attendees}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
+                    <p className="text-xs uppercase tracking-[0.12em] text-zinc-500">
+                      Attended / no-show
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-zinc-950">
+                      {event.attendedCount} / {event.noShowCount}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
+                    <p className="text-xs uppercase tracking-[0.12em] text-zinc-500">
+                      Dropped
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-zinc-950">
+                      {event.dropoffCount}
+                    </p>
+                  </div>
+                </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
@@ -745,6 +1011,11 @@ export default function AdminPage() {
                   <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
                     Attendee roster
                   </p>
+                  <p className="mt-2 text-sm text-zinc-600">
+                    Same-day confirmations are visible here. If confirmed today drops
+                    below the viable threshold, remaining attendees can still choose to
+                    leave from their dashboard.
+                  </p>
                   <div className="mt-3 space-y-3">
                     {event.attendees.length > 0 ? (
                       event.attendees.map((attendee) => (
@@ -775,6 +1046,14 @@ export default function AdminPage() {
                                 </span>
                               </p>
                               <p className="mt-1">
+                                Day-of:{' '}
+                                <span className="font-medium text-zinc-950">
+                                  {formatDayConfirmationStatus(
+                                    attendee.day_of_confirmation_status
+                                  )}
+                                </span>
+                              </p>
+                              <p className="mt-1">
                                 Restaurant score:{' '}
                                 <span className="font-medium text-zinc-950">
                                   {attendee.restaurant_match_score}
@@ -799,28 +1078,54 @@ export default function AdminPage() {
                             </p>
                           ) : null}
                           <div className="mt-3 flex flex-wrap gap-2">
-                            {attendee.signup_status === 'going' ? (
+                            {['going', 'waitlisted'].includes(attendee.signup_status) ? (
                               <>
-                                <button
-                                  className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
-                                  disabled={
-                                    attendeeActionKey ===
-                                    `${event.id}:${attendee.user_id}:mark-no-show`
-                                  }
-                                  onClick={() =>
-                                    void runAttendeeAction(
-                                      event.id,
-                                      attendee.user_id,
-                                      'mark-no-show'
-                                    )
-                                  }
-                                  type="button"
-                                >
-                                  {attendeeActionKey ===
-                                  `${event.id}:${attendee.user_id}:mark-no-show`
-                                    ? 'Working...'
-                                    : 'Mark no-show'}
-                                </button>
+                                {hasEventStarted(event.starts_at) ? (
+                                  attendee.signup_status === 'going' ? (
+                                    <>
+                                      <button
+                                        className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+                                        disabled={
+                                          attendeeActionKey ===
+                                          `${event.id}:${attendee.user_id}:mark-attended`
+                                        }
+                                        onClick={() =>
+                                          void runAttendeeAction(
+                                            event.id,
+                                            attendee.user_id,
+                                            'mark-attended'
+                                          )
+                                        }
+                                        type="button"
+                                      >
+                                        {attendeeActionKey ===
+                                        `${event.id}:${attendee.user_id}:mark-attended`
+                                          ? 'Working...'
+                                          : 'Mark attended'}
+                                      </button>
+                                      <button
+                                        className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+                                        disabled={
+                                          attendeeActionKey ===
+                                          `${event.id}:${attendee.user_id}:mark-no-show`
+                                        }
+                                        onClick={() =>
+                                          void runAttendeeAction(
+                                            event.id,
+                                            attendee.user_id,
+                                            'mark-no-show'
+                                          )
+                                        }
+                                        type="button"
+                                      >
+                                        {attendeeActionKey ===
+                                        `${event.id}:${attendee.user_id}:mark-no-show`
+                                          ? 'Working...'
+                                          : 'Mark no-show'}
+                                      </button>
+                                    </>
+                                  ) : null
+                                ) : null}
                                 <button
                                   className="rounded-xl border border-red-300 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
                                   disabled={
@@ -842,7 +1147,7 @@ export default function AdminPage() {
                                     : 'Remove'}
                                 </button>
                               </>
-                            ) : (
+                            ) : attendee.signup_status !== 'attended' ? (
                               <button
                                 className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
                                 disabled={
@@ -861,9 +1166,9 @@ export default function AdminPage() {
                                 {attendeeActionKey ===
                                 `${event.id}:${attendee.user_id}:restore`
                                   ? 'Working...'
-                                  : 'Restore'}
+                                  : 'Reinstate'}
                               </button>
-                            )}
+                            ) : null}
                           </div>
                         </div>
                       ))

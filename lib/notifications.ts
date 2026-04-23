@@ -4,12 +4,19 @@ import { sendNotificationEmail } from '@/lib/email'
 import { createServerSupabaseAdminClient } from '@/lib/supabase/server'
 
 export type NotificationType =
-  | 'event_reminder'
   | 'event_signup'
   | 'event_update'
+  | 'event_reminder_24h'
+  | 'event_reminder_2h'
+  | 'event_follow_up'
+  | 'event_waitlist'
+  | 'event_promoted'
+  | 'event_day_confirmation'
+  | 'event_attendance'
 
 type NotificationInput = {
   body: string
+  duplicateBehavior?: 'rearm' | 'skip'
   eventId: number
   title: string
   type: NotificationType
@@ -186,10 +193,11 @@ export async function queueNotifications(notifications: NotificationInput[]) {
 
     if (error) {
       if (error.code === '23505') {
-        const rearmedNotification = await rearmExistingNotification(
-          adminClient,
-          notification
-        )
+        if ((notification.duplicateBehavior ?? 'rearm') === 'skip') {
+          continue
+        }
+
+        const rearmedNotification = await rearmExistingNotification(adminClient, notification)
 
         if (rearmedNotification) {
           queuedNotifications.push(rearmedNotification)

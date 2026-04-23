@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 
-import { recomputeEventSignupScores } from '@/lib/event-signups'
+import { calculateRestaurantMatchScore, type EventForScoring, type ProfileForScoring } from '@/lib/events'
+import {
+  promoteWaitlistedAttendees,
+  syncEventSignupScores,
+} from '@/lib/event-operations'
 import { queueNotifications } from '@/lib/notifications'
 import {
   createServerSupabaseAdminClient,
@@ -16,9 +20,12 @@ type SignupRequest = {
 
 type EventRow = {
   capacity: number
+  duration_minutes: number
   id: number
   intent: 'dating' | 'friendship'
+  restaurant_cuisines: string[] | null
   restaurant_name: string
+  restaurant_subregion: string | null
   starts_at: string
   status: 'open' | 'closed' | 'cancelled'
   title: string
@@ -28,13 +35,22 @@ type SignupRow = {
   personal_match_score: number
   personal_match_summary: string | null
   restaurant_match_score: number
-  status: 'going' | 'cancelled'
+  status: 'going' | 'waitlisted' | 'cancelled' | 'removed' | 'no_show' | 'attended'
 }
 
 type JoinEventResultRow = {
   error: string | null
   ok: boolean
-  status: 'going' | 'full' | 'closed' | 'not_found'
+  status: 'going' | 'waitlisted' | 'closed' | 'not_found'
+}
+
+type ProfileRow = {
+  bio: string | null
+  cuisine_preferences: string[] | null
+  id: string
+  intent: 'dating' | 'friendship' | null
+  max_travel_minutes: number | null
+  subregion: string | null
 }
 
 function parseBearerToken(request: Request) {
@@ -78,7 +94,9 @@ export async function POST(request: Request) {
 
     const { data: event, error: eventError } = await adminClient
       .from('events')
-      .select('capacity, id, intent, restaurant_name, starts_at, status, title')
+      .select(
+        'capacity, duration_minutes, id, intent, restaurant_cuisines, restaurant_name, restaurant_subregion, starts_at, status, title'
+      )
       .eq('id', eventId)
       .maybeSingle<EventRow>()
 
@@ -86,11 +104,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Event not found.' }, { status: 404 })
     }
 
-    if (event.status !== 'open') {
+    if (new Date(event.starts_at).getTime() <= Date.now()) {
       return NextResponse.json(
-        { error: 'This event is not open for signups.' },
+        { error: 'This event has already started.' },
         { status: 400 }
       )
+    }
+
+    const { data: existingSignup, error: existingSignupError } = await adminClient
+      .from('event_signups')
+      .select(
+        'personal_match_score, personal_match_summary, restaurant_match_score, status'
+      )
+      .eq('event_id', eventId)
+      .eq('user_id', user.id)
+      .maybeSingle<SignupRow>()
+
+    if (existingSignupError) {
+      throw new Error(existingSignupError.message)
     }
 
     if (action === 'leave') {
@@ -112,13 +143,24 @@ export async function POST(request: Request) {
         throw new Error(leaveError.message)
       }
 
-      await recomputeEventSignupScores(adminClient, eventId)
+      if (existingSignup?.status === 'going') {
+        await promoteWaitlistedAttendees(adminClient, eventId)
+      }
+
+      await syncEventSignupScores(adminClient, eventId)
 
       return NextResponse.json({
         eventId,
         ok: true,
         status: 'cancelled',
       })
+    }
+
+    if (event.status !== 'open') {
+      return NextResponse.json(
+        { error: 'This event is not open for signups.' },
+        { status: 400 }
+      )
     }
 
     const joinRpcResponse = await adminClient.rpc('join_event_signup_safe', {
@@ -145,20 +187,58 @@ export async function POST(request: Request) {
         )
       }
 
-      if (joinResult?.status === 'full') {
-        return NextResponse.json(
-          { error: joinResult.error ?? 'This event is already full.' },
-          { status: 409 }
-        )
-      }
-
       return NextResponse.json(
         { error: joinResult?.error ?? 'This event is not open for signups.' },
         { status: 400 }
       )
     }
 
-    await recomputeEventSignupScores(adminClient, eventId)
+    await syncEventSignupScores(adminClient, eventId)
+
+    if (joinResult.status === 'waitlisted') {
+      const { data: profile, error: profileError } = await adminClient
+        .from('profiles')
+        .select('bio, cuisine_preferences, id, intent, max_travel_minutes, subregion')
+        .eq('id', user.id)
+        .maybeSingle<ProfileRow>()
+
+      if (profileError) {
+        throw new Error(profileError.message)
+      }
+
+      const scoringProfile: ProfileForScoring = {
+        bio: profile?.bio ?? null,
+        cuisine_preferences: profile?.cuisine_preferences ?? [],
+        id: user.id,
+        intent: profile?.intent ?? null,
+        max_travel_minutes: profile?.max_travel_minutes ?? null,
+        subregion: profile?.subregion ?? null,
+      }
+      const scoringEvent: EventForScoring = {
+        intent: event.intent,
+        restaurant_cuisines: event.restaurant_cuisines,
+        restaurant_subregion: event.restaurant_subregion,
+      }
+
+      const { error: waitlistScoreError } = await adminClient
+        .from('event_signups')
+        .update({
+          personal_match_score: 50,
+          personal_match_summary:
+            'You are currently on the waitlist. Personal fit will lock in if a confirmed seat opens.',
+          restaurant_match_score: calculateRestaurantMatchScore(
+            scoringProfile,
+            scoringEvent
+          ),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('event_id', eventId)
+        .eq('user_id', user.id)
+
+      if (waitlistScoreError) {
+        throw new Error(waitlistScoreError.message)
+      }
+    }
 
     const { data: refreshedSignup, error: refreshedSignupError } = await adminClient
       .from('event_signups')
@@ -177,10 +257,17 @@ export async function POST(request: Request) {
 
     await queueNotifications([
       {
-        body: `You're in for ${event.title} at ${event.restaurant_name}. Restaurant and personal scores are now live on your dashboard.`,
+        body:
+          joinResult.status === 'waitlisted'
+            ? `You are on the waitlist for ${event.title} at ${event.restaurant_name}. We will notify you if a confirmed seat opens.`
+            : `You're in for ${event.title} at ${event.restaurant_name}. Restaurant and personal scores are now live on your dashboard.`,
+        duplicateBehavior: 'rearm',
         eventId: event.id,
-        title: 'Event signup confirmed',
-        type: 'event_signup',
+        title:
+          joinResult.status === 'waitlisted'
+            ? 'You joined the waitlist'
+            : 'Event signup confirmed',
+        type: joinResult.status === 'waitlisted' ? 'event_waitlist' : 'event_signup',
         userId: user.id,
       },
     ])
@@ -189,7 +276,7 @@ export async function POST(request: Request) {
       eventId,
       ok: true,
       signup: refreshedSignup,
-      status: 'going',
+      status: joinResult.status,
     })
   } catch (error) {
     return NextResponse.json(
