@@ -263,6 +263,7 @@ create table if not exists public.events (
   starts_at timestamptz not null,
   duration_minutes integer not null default 120 check (duration_minutes >= 30 and duration_minutes <= 360),
   minimum_viable_attendees integer not null default 2 check (minimum_viable_attendees >= 2 and minimum_viable_attendees <= capacity),
+  viability_status text not null default 'healthy' check (viability_status in ('healthy', 'at_risk', 'forced_go', 'cancelled_low_confirmations')),
   restaurant_name text not null,
   restaurant_subregion text not null check (restaurant_subregion in ('Uptown', 'Midtown', 'Downtown')),
   restaurant_neighbourhood text,
@@ -352,6 +353,7 @@ check (
   type in (
     'event_signup',
     'event_update',
+    'event_at_risk',
     'event_reminder_24h',
     'event_reminder_2h',
     'event_follow_up',
@@ -361,6 +363,45 @@ check (
     'event_day_confirmation'
   )
 );
+
+create table if not exists public.event_feedback (
+  id bigint generated always as identity primary key,
+  event_id bigint not null references public.events(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  venue_rating integer not null check (venue_rating between 1 and 5),
+  group_rating integer not null check (group_rating between 1 and 5),
+  would_join_again boolean not null,
+  notes text,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  unique (event_id, user_id)
+);
+
+create index if not exists event_feedback_event_idx
+on public.event_feedback (event_id);
+
+alter table public.event_feedback enable row level security;
+
+grant select, insert, update on public.event_feedback to authenticated;
+
+drop policy if exists "Users can view their own event feedback" on public.event_feedback;
+create policy "Users can view their own event feedback"
+on public.event_feedback
+for select
+using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert their own event feedback" on public.event_feedback;
+create policy "Users can insert their own event feedback"
+on public.event_feedback
+for insert
+with check (auth.uid() = user_id);
+
+drop policy if exists "Users can update their own event feedback" on public.event_feedback;
+create policy "Users can update their own event feedback"
+on public.event_feedback
+for update
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
 
 alter table public.notifications
 drop constraint if exists notifications_user_id_match_id_type_key;
@@ -510,6 +551,7 @@ check (
   type in (
     'event_signup',
     'event_update',
+    'event_at_risk',
     'event_reminder_24h',
     'event_reminder_2h',
     'event_follow_up',

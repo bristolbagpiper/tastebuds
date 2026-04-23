@@ -8,7 +8,13 @@ import { MANHATTAN_SUBREGIONS, parseCuisinePreferenceInput } from '@/lib/events'
 import { supabase } from '@/lib/supabase/client'
 
 type EventIntent = 'dating' | 'friendship'
-type EventAction = 'cancel' | 'close' | 'reopen' | 'update'
+type EventAction =
+  | 'cancel'
+  | 'cancel-low-confirmation'
+  | 'close'
+  | 'force-proceed'
+  | 'reopen'
+  | 'update'
 type AttendeeAction = 'mark-attended' | 'mark-no-show' | 'remove' | 'restore'
 
 type AdminEventAttendee = {
@@ -35,12 +41,15 @@ type AdminEvent = {
   attendeeCount: number
   attendees: AdminEventAttendee[]
   attendedCount: number
+  average_group_rating: number | null
+  average_venue_rating: number | null
   capacity: number
   confirmedTodayCount: number
   created_at: string
   description: string | null
   dropoffCount: number
   duration_minutes: number
+  feedback_count: number
   id: number
   intent: EventIntent
   minimum_viable_attendees: number
@@ -52,7 +61,9 @@ type AdminEvent = {
   starts_at: string
   status: 'open' | 'closed' | 'cancelled'
   title: string
+  viability_status: 'healthy' | 'at_risk' | 'forced_go' | 'cancelled_low_confirmations'
   waitlistCount: number
+  would_join_again_count: number
 }
 
 type EmailRetryResult = {
@@ -65,11 +76,13 @@ type EmailRetryResult = {
 type AdminSummary = {
   averageFillRate: number
   openEvents: number
+  totalAtRisk: number
   totalDayConfirmed: number
   totalAttended: number
   totalConfirmed: number
   totalDropped: number
   totalEvents: number
+  totalFeedback: number
   totalNoShows: number
   totalWaitlisted: number
 }
@@ -144,6 +157,19 @@ function formatDayConfirmationStatus(
       return 'Declined today'
     default:
       return 'Pending today'
+  }
+}
+
+function formatViabilityStatus(status: AdminEvent['viability_status']) {
+  switch (status) {
+    case 'at_risk':
+      return 'At risk'
+    case 'forced_go':
+      return 'Forced to proceed'
+    case 'cancelled_low_confirmations':
+      return 'Cancelled for low confirmations'
+    default:
+      return 'Healthy'
   }
 }
 
@@ -411,6 +437,10 @@ export default function AdminPage() {
     setSuccess(
       action === 'close'
         ? 'Event closed.'
+        : action === 'force-proceed'
+          ? 'Event forced to proceed.'
+        : action === 'cancel-low-confirmation'
+          ? 'Event cancelled for low confirmations.'
         : action === 'cancel'
           ? 'Event cancelled.'
           : action === 'reopen'
@@ -620,7 +650,7 @@ export default function AdminPage() {
       ) : null}
 
       {summary ? (
-        <section className="mt-8 grid gap-4 md:grid-cols-5">
+        <section className="mt-8 grid gap-4 md:grid-cols-6">
           <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
             <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Events</p>
             <p className="mt-2 text-3xl font-semibold text-zinc-950">
@@ -656,6 +686,15 @@ export default function AdminPage() {
               {summary.totalDayConfirmed}
             </p>
             <p className="mt-1 text-sm text-zinc-600">Same-day commitments</p>
+          </div>
+          <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+              At risk / feedback
+            </p>
+            <p className="mt-2 text-3xl font-semibold text-zinc-950">
+              {summary.totalAtRisk} / {summary.totalFeedback}
+            </p>
+            <p className="mt-1 text-sm text-zinc-600">Weak events vs feedback rows</p>
           </div>
           <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
             <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
@@ -920,6 +959,12 @@ export default function AdminPage() {
                         {event.confirmedTodayCount}/{event.minimum_viable_attendees}
                       </span>
                     </p>
+                    <p className="mt-1">
+                      Health:{' '}
+                      <span className="font-medium text-zinc-950">
+                        {formatViabilityStatus(event.viability_status)}
+                      </span>
+                    </p>
                   </div>
                 </div>
                 {event.description ? (
@@ -927,7 +972,13 @@ export default function AdminPage() {
                     {event.description}
                   </p>
                 ) : null}
-                <div className="mt-4 grid gap-3 md:grid-cols-5">
+                {event.viability_status === 'at_risk' ? (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    This event is below its same-day viable threshold. Decide whether to
+                    force it through or kill it cleanly rather than letting people guess.
+                  </div>
+                ) : null}
+                <div className="mt-4 grid gap-3 md:grid-cols-6">
                   <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
                     <p className="text-xs uppercase tracking-[0.12em] text-zinc-500">
                       Confirmed
@@ -968,6 +1019,18 @@ export default function AdminPage() {
                       {event.dropoffCount}
                     </p>
                   </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
+                    <p className="text-xs uppercase tracking-[0.12em] text-zinc-500">
+                      Feedback
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold text-zinc-950">
+                      {event.feedback_count}
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-600">
+                      Venue {event.average_venue_rating ?? '--'} / Group{' '}
+                      {event.average_group_rating ?? '--'}
+                    </p>
+                  </div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
@@ -994,6 +1057,26 @@ export default function AdminPage() {
                         type="button"
                       >
                         {eventActionLoadingId === event.id ? 'Working...' : 'Cancel'}
+                      </button>
+                      <button
+                        className="rounded-xl border border-amber-300 px-3 py-2 text-xs font-medium text-amber-800 transition hover:bg-amber-600 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+                        disabled={eventActionLoadingId === event.id}
+                        onClick={() => void runEventAction(event.id, 'force-proceed')}
+                        type="button"
+                      >
+                        {eventActionLoadingId === event.id ? 'Working...' : 'Force proceed'}
+                      </button>
+                      <button
+                        className="rounded-xl border border-red-300 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+                        disabled={eventActionLoadingId === event.id}
+                        onClick={() =>
+                          void runEventAction(event.id, 'cancel-low-confirmation')
+                        }
+                        type="button"
+                      >
+                        {eventActionLoadingId === event.id
+                          ? 'Working...'
+                          : 'Cancel for low confirmations'}
                       </button>
                     </>
                   ) : (
@@ -1176,6 +1259,26 @@ export default function AdminPage() {
                       <p className="text-sm text-zinc-600">No attendees yet.</p>
                     )}
                   </div>
+                </div>
+                <div className="mt-5 rounded-2xl border border-zinc-200 bg-white p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+                    Feedback summary
+                  </p>
+                  <p className="mt-2 text-sm text-zinc-600">
+                    Venue score: <span className="font-medium text-zinc-950">
+                      {event.average_venue_rating ?? '--'}
+                    </span>{' '}
+                    | Group score:{' '}
+                    <span className="font-medium text-zinc-950">
+                      {event.average_group_rating ?? '--'}
+                    </span>{' '}
+                    | Would join again:{' '}
+                    <span className="font-medium text-zinc-950">
+                      {event.feedback_count > 0
+                        ? `${event.would_join_again_count}/${event.feedback_count}`
+                        : '--'}
+                    </span>
+                  </p>
                 </div>
               </article>
             ))

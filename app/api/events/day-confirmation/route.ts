@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 
 import {
   promoteWaitlistedAttendees,
+  refreshEventViability,
   syncEventSignupScores,
 } from '@/lib/event-operations'
 import { hasEventStarted, isSameEventDayInNewYork } from '@/lib/event-time'
@@ -134,6 +135,8 @@ export async function POST(request: Request) {
         throw new Error(confirmError.message)
       }
 
+      await refreshEventViability(adminClient, eventId)
+
       return NextResponse.json({
         eventId,
         ok: true,
@@ -158,6 +161,7 @@ export async function POST(request: Request) {
 
     await promoteWaitlistedAttendees(adminClient, eventId)
     await syncEventSignupScores(adminClient, eventId)
+    await refreshEventViability(adminClient, eventId)
 
     await queueNotifications([
       {

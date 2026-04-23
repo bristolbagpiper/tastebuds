@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 
-import { syncEventSignupScores } from '@/lib/event-operations'
+import {
+  refreshEventViability,
+  syncEventSignupScores,
+} from '@/lib/event-operations'
 import {
   MANHATTAN_SUBREGIONS,
   type EventIntent,
@@ -25,7 +28,13 @@ type CreateEventRequest = {
   title?: string
 }
 
-type UpdateEventAction = 'cancel' | 'close' | 'reopen' | 'update'
+type UpdateEventAction =
+  | 'cancel'
+  | 'cancel-low-confirmation'
+  | 'close'
+  | 'force-proceed'
+  | 'reopen'
+  | 'update'
 
 type UpdateEventRequest = {
   action?: UpdateEventAction
@@ -47,15 +56,18 @@ type UpdateEventRequest = {
 type EventSummary = {
   attendeeCount: number
   attendees: EventAttendee[]
+  attendedCount: number
+  average_group_rating: number | null
+  average_venue_rating: number | null
   capacity: number
+  confirmedTodayCount: number
   created_at: string
   description: string | null
-  confirmedTodayCount: number
   dropoffCount: number
   duration_minutes: number
+  feedback_count: number
   id: number
   intent: EventIntent
-  attendedCount: number
   minimum_viable_attendees: number
   noShowCount: number
   restaurant_cuisines: string[]
@@ -65,7 +77,9 @@ type EventSummary = {
   starts_at: string
   status: 'open' | 'closed' | 'cancelled'
   title: string
+  viability_status: 'healthy' | 'at_risk' | 'forced_go' | 'cancelled_low_confirmations'
   waitlistCount: number
+  would_join_again_count: number
 }
 
 type EventAttendee = {
@@ -91,17 +105,19 @@ type EventAttendee = {
 type AdminAnalyticsSummary = {
   averageFillRate: number
   openEvents: number
+  totalAtRisk: number
   totalDayConfirmed: number
   totalAttended: number
   totalConfirmed: number
   totalDropped: number
   totalEvents: number
+  totalFeedback: number
   totalNoShows: number
   totalWaitlisted: number
 }
 
 const EVENT_SUMMARY_SELECT =
-  'capacity, created_at, description, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title'
+  'capacity, created_at, description, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, viability_status'
 
 function isValidSubregion(value: string) {
   return MANHATTAN_SUBREGIONS.includes(value as ManhattanSubregion)
@@ -114,7 +130,22 @@ async function fetchEvents() {
     .select(EVENT_SUMMARY_SELECT)
     .order('starts_at', { ascending: true })
     .limit(60)
-    .returns<EventSummary[]>()
+    .returns<
+      Omit<
+        EventSummary,
+        | 'attendeeCount'
+        | 'attendees'
+        | 'attendedCount'
+        | 'average_group_rating'
+        | 'average_venue_rating'
+        | 'confirmedTodayCount'
+        | 'dropoffCount'
+        | 'feedback_count'
+        | 'noShowCount'
+        | 'waitlistCount'
+        | 'would_join_again_count'
+      >[]
+    >()
 
   if (error) {
     throw new Error(error.message)
@@ -128,11 +159,13 @@ async function fetchEvents() {
       summary: {
         averageFillRate: 0,
         openEvents: 0,
+        totalAtRisk: 0,
         totalDayConfirmed: 0,
         totalAttended: 0,
         totalConfirmed: 0,
         totalDropped: 0,
         totalEvents: 0,
+        totalFeedback: 0,
         totalNoShows: 0,
         totalWaitlisted: 0,
       } satisfies AdminAnalyticsSummary,
@@ -141,7 +174,7 @@ async function fetchEvents() {
 
   const { data: signups, error: signupsError } = await adminClient
     .from('event_signups')
-      .select(
+    .select(
       'day_of_confirmation_status, event_id, personal_match_score, personal_match_summary, restaurant_match_score, status, user_id'
     )
     .in('event_id', eventIds)
@@ -161,6 +194,23 @@ async function fetchEvents() {
     throw new Error(signupsError.message)
   }
 
+  const { data: feedbackRows, error: feedbackError } = await adminClient
+    .from('event_feedback')
+    .select('event_id, group_rating, venue_rating, would_join_again')
+    .in('event_id', eventIds)
+    .returns<
+      {
+        event_id: number
+        group_rating: number
+        venue_rating: number
+        would_join_again: boolean
+      }[]
+    >()
+
+  if (feedbackError) {
+    throw new Error(feedbackError.message)
+  }
+
   const attendeeCountByEvent = new Map<number, number>()
   const attendedCountByEvent = new Map<number, number>()
   const attendeesByEvent = new Map<number, EventAttendee[]>()
@@ -168,16 +218,12 @@ async function fetchEvents() {
   const dropoffCountByEvent = new Map<number, number>()
   const noShowCountByEvent = new Map<number, number>()
   const waitlistCountByEvent = new Map<number, number>()
-  const userIds = Array.from(
-    new Set((signups ?? []).map((signup) => signup.user_id))
-  )
+  const userIds = Array.from(new Set((signups ?? []).map((signup) => signup.user_id)))
 
   const { data: profiles, error: profilesError } = userIds.length
     ? await adminClient
         .from('profiles')
-        .select(
-          'cuisine_preferences, display_name, id, neighbourhood, subregion'
-        )
+        .select('cuisine_preferences, display_name, id, neighbourhood, subregion')
         .in('id', userIds)
         .returns<
           {
@@ -194,10 +240,7 @@ async function fetchEvents() {
     throw new Error(profilesError.message)
   }
 
-  const profileById = new Map(
-    (profiles ?? []).map((profile) => [profile.id, profile])
-  )
-
+  const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]))
   const emailByUserId = new Map<string, string | null>()
 
   for (const userId of userIds) {
@@ -267,42 +310,69 @@ async function fetchEvents() {
     ])
   }
 
-  const mappedEvents = (events ?? []).map((event) => ({
+  const feedbackByEvent = new Map<
+    number,
+    {
+      average_group_rating: number | null
+      average_venue_rating: number | null
+      feedback_count: number
+      would_join_again_count: number
+    }
+  >()
+
+  for (const eventId of eventIds) {
+    const eventFeedback = (feedbackRows ?? []).filter((row) => row.event_id === eventId)
+
+    feedbackByEvent.set(eventId, {
+      average_group_rating:
+        eventFeedback.length > 0
+          ? Number(
+              (
+                eventFeedback.reduce((sum, row) => sum + row.group_rating, 0) /
+                eventFeedback.length
+              ).toFixed(1)
+            )
+          : null,
+      average_venue_rating:
+        eventFeedback.length > 0
+          ? Number(
+              (
+                eventFeedback.reduce((sum, row) => sum + row.venue_rating, 0) /
+                eventFeedback.length
+              ).toFixed(1)
+            )
+          : null,
+      feedback_count: eventFeedback.length,
+      would_join_again_count: eventFeedback.filter((row) => row.would_join_again).length,
+    })
+  }
+
+  const mappedEvents: EventSummary[] = (events ?? []).map((event) => ({
     ...event,
     attendeeCount: attendeeCountByEvent.get(event.id) ?? 0,
     attendedCount: attendedCountByEvent.get(event.id) ?? 0,
     attendees: attendeesByEvent.get(event.id) ?? [],
+    average_group_rating: feedbackByEvent.get(event.id)?.average_group_rating ?? null,
+    average_venue_rating: feedbackByEvent.get(event.id)?.average_venue_rating ?? null,
     confirmedTodayCount: confirmedTodayCountByEvent.get(event.id) ?? 0,
     dropoffCount: dropoffCountByEvent.get(event.id) ?? 0,
+    feedback_count: feedbackByEvent.get(event.id)?.feedback_count ?? 0,
     noShowCount: noShowCountByEvent.get(event.id) ?? 0,
     waitlistCount: waitlistCountByEvent.get(event.id) ?? 0,
+    would_join_again_count: feedbackByEvent.get(event.id)?.would_join_again_count ?? 0,
   }))
 
   const totalEvents = mappedEvents.length
-  const totalConfirmed = mappedEvents.reduce(
-    (total, event) => total + event.attendeeCount,
-    0
-  )
-  const totalWaitlisted = mappedEvents.reduce(
-    (total, event) => total + event.waitlistCount,
-    0
-  )
-  const totalAttended = mappedEvents.reduce(
-    (total, event) => total + event.attendedCount,
-    0
-  )
+  const totalConfirmed = mappedEvents.reduce((total, event) => total + event.attendeeCount, 0)
+  const totalWaitlisted = mappedEvents.reduce((total, event) => total + event.waitlistCount, 0)
+  const totalAttended = mappedEvents.reduce((total, event) => total + event.attendedCount, 0)
   const totalDayConfirmed = mappedEvents.reduce(
     (total, event) => total + event.confirmedTodayCount,
     0
   )
-  const totalNoShows = mappedEvents.reduce(
-    (total, event) => total + event.noShowCount,
-    0
-  )
-  const totalDropped = mappedEvents.reduce(
-    (total, event) => total + event.dropoffCount,
-    0
-  )
+  const totalNoShows = mappedEvents.reduce((total, event) => total + event.noShowCount, 0)
+  const totalDropped = mappedEvents.reduce((total, event) => total + event.dropoffCount, 0)
+  const totalFeedback = mappedEvents.reduce((total, event) => total + event.feedback_count, 0)
   const averageFillRate =
     totalEvents === 0
       ? 0
@@ -319,21 +389,35 @@ async function fetchEvents() {
     summary: {
       averageFillRate,
       openEvents: mappedEvents.filter((event) => event.status === 'open').length,
+      totalAtRisk: mappedEvents.filter((event) => event.viability_status === 'at_risk')
+        .length,
       totalDayConfirmed,
       totalAttended,
       totalConfirmed,
       totalDropped,
       totalEvents,
+      totalFeedback,
       totalNoShows,
       totalWaitlisted,
     } satisfies AdminAnalyticsSummary,
   }
 }
 
-function buildEventUpdateNotification(
-  action: UpdateEventAction,
-  event: EventSummary
-) {
+function buildEventUpdateNotification(action: UpdateEventAction, event: EventSummary) {
+  if (action === 'cancel-low-confirmation') {
+    return {
+      body: `${event.title} at ${event.restaurant_name} has been cancelled because same-day confirmations did not hold up.`,
+      title: 'Event cancelled for low confirmations',
+    }
+  }
+
+  if (action === 'force-proceed') {
+    return {
+      body: `${event.title} at ${event.restaurant_name} is still going ahead. The host team has forced it to proceed despite the low same-day count.`,
+      title: 'Event will still proceed',
+    }
+  }
+
   if (action === 'cancel') {
     return {
       body: `${event.title} at ${event.restaurant_name} has been cancelled.`,
@@ -477,11 +561,7 @@ export async function POST(request: Request) {
     )
   }
 
-  if (
-    !Number.isFinite(durationMinutes) ||
-    durationMinutes < 30 ||
-    durationMinutes > 360
-  ) {
+  if (!Number.isFinite(durationMinutes) || durationMinutes < 30 || durationMinutes > 360) {
     return NextResponse.json(
       {
         error: 'durationMinutes must be a number between 30 and 360.',
@@ -531,9 +611,25 @@ export async function POST(request: Request) {
         restaurant_subregion: restaurantSubregion,
         starts_at: startsAtDate.toISOString(),
         title,
+        viability_status: 'healthy',
       })
       .select(EVENT_SUMMARY_SELECT)
-      .single<EventSummary>()
+      .single<
+        Omit<
+          EventSummary,
+          | 'attendeeCount'
+          | 'attendees'
+          | 'attendedCount'
+          | 'average_group_rating'
+          | 'average_venue_rating'
+          | 'confirmedTodayCount'
+          | 'dropoffCount'
+          | 'feedback_count'
+          | 'noShowCount'
+          | 'waitlistCount'
+          | 'would_join_again_count'
+        >
+      >()
 
     if (error || !insertedEvent) {
       throw new Error(error?.message ?? 'Failed to create event.')
@@ -543,13 +639,17 @@ export async function POST(request: Request) {
       event: {
         ...insertedEvent,
         attendeeCount: 0,
-        attendedCount: 0,
         attendees: [],
+        attendedCount: 0,
+        average_group_rating: null,
+        average_venue_rating: null,
         confirmedTodayCount: 0,
         dropoffCount: 0,
+        feedback_count: 0,
         noShowCount: 0,
         waitlistCount: 0,
-      },
+        would_join_again_count: 0,
+      } satisfies EventSummary,
       ok: true,
     })
   } catch (error) {
@@ -593,19 +693,26 @@ export async function PATCH(request: Request) {
 
   const action: UpdateEventAction = body.action ?? 'update'
   const updates: Record<string, unknown> = {}
-
   const adminClient = createServerSupabaseAdminClient()
+
   const { data: currentEvent, error: currentEventError } = await adminClient
     .from('events')
-    .select('capacity, minimum_viable_attendees')
+    .select(
+      'capacity, minimum_viable_attendees, restaurant_name, starts_at, status, title, viability_status'
+    )
     .eq('id', eventId)
-    .maybeSingle<{ capacity: number; minimum_viable_attendees: number }>()
+    .maybeSingle<{
+      capacity: number
+      minimum_viable_attendees: number
+      restaurant_name: string
+      starts_at: string
+      status: 'open' | 'closed' | 'cancelled'
+      title: string
+      viability_status: EventSummary['viability_status']
+    }>()
 
   if (currentEventError) {
-    return NextResponse.json(
-      { error: currentEventError.message },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: currentEventError.message }, { status: 500 })
   }
 
   if (!currentEvent) {
@@ -616,17 +723,22 @@ export async function PATCH(request: Request) {
     updates.status = 'closed'
   } else if (action === 'cancel') {
     updates.status = 'cancelled'
+    updates.viability_status = 'healthy'
   } else if (action === 'reopen') {
     updates.status = 'open'
+    updates.viability_status = 'healthy'
+  } else if (action === 'force-proceed') {
+    updates.status = 'open'
+    updates.viability_status = 'forced_go'
+  } else if (action === 'cancel-low-confirmation') {
+    updates.status = 'cancelled'
+    updates.viability_status = 'cancelled_low_confirmations'
   }
 
   if (typeof body.title === 'string') {
     const nextTitle = body.title.trim()
     if (!nextTitle) {
-      return NextResponse.json(
-        { error: 'title cannot be empty.' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'title cannot be empty.' }, { status: 400 })
     }
     updates.title = nextTitle
   }
@@ -651,9 +763,7 @@ export async function PATCH(request: Request) {
     const nextSubregion = body.restaurantSubregion.trim()
     if (!isValidSubregion(nextSubregion)) {
       return NextResponse.json(
-        {
-          error: 'restaurantSubregion must be Uptown, Midtown, or Downtown.',
-        },
+        { error: 'restaurantSubregion must be Uptown, Midtown, or Downtown.' },
         { status: 400 }
       )
     }
@@ -683,12 +793,7 @@ export async function PATCH(request: Request) {
     const startsAtDate = new Date(body.startsAt)
 
     if (Number.isNaN(startsAtDate.getTime())) {
-      return NextResponse.json(
-        {
-          error: 'startsAt must be a valid datetime.',
-        },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'startsAt must be a valid datetime.' }, { status: 400 })
     }
 
     updates.starts_at = startsAtDate.toISOString()
@@ -709,9 +814,7 @@ export async function PATCH(request: Request) {
 
     if (body.capacity < nextMinimumViable) {
       return NextResponse.json(
-        {
-          error: 'capacity cannot be lower than minimumViableAttendees.',
-        },
+        { error: 'capacity cannot be lower than minimumViableAttendees.' },
         { status: 400 }
       )
     }
@@ -720,11 +823,7 @@ export async function PATCH(request: Request) {
   }
 
   if (typeof body.durationMinutes === 'number') {
-    if (
-      !Number.isFinite(body.durationMinutes) ||
-      body.durationMinutes < 30 ||
-      body.durationMinutes > 360
-    ) {
+    if (!Number.isFinite(body.durationMinutes) || body.durationMinutes < 30 || body.durationMinutes > 360) {
       return NextResponse.json(
         { error: 'durationMinutes must be a number between 30 and 360.' },
         { status: 400 }
@@ -735,10 +834,7 @@ export async function PATCH(request: Request) {
   }
 
   if (typeof body.minimumViableAttendees === 'number') {
-    if (
-      !Number.isFinite(body.minimumViableAttendees) ||
-      body.minimumViableAttendees < 2
-    ) {
+    if (!Number.isFinite(body.minimumViableAttendees) || body.minimumViableAttendees < 2) {
       return NextResponse.json(
         { error: 'minimumViableAttendees must be at least 2.' },
         { status: 400 }
@@ -775,7 +871,22 @@ export async function PATCH(request: Request) {
       .update(updates)
       .eq('id', eventId)
       .select(EVENT_SUMMARY_SELECT)
-      .maybeSingle<EventSummary>()
+      .maybeSingle<
+        Omit<
+          EventSummary,
+          | 'attendeeCount'
+          | 'attendees'
+          | 'attendedCount'
+          | 'average_group_rating'
+          | 'average_venue_rating'
+          | 'confirmedTodayCount'
+          | 'dropoffCount'
+          | 'feedback_count'
+          | 'noShowCount'
+          | 'waitlistCount'
+          | 'would_join_again_count'
+        >
+      >()
 
     if (error) {
       throw new Error(error.message)
@@ -783,6 +894,21 @@ export async function PATCH(request: Request) {
 
     if (!updatedEvent) {
       return NextResponse.json({ error: 'Event not found.' }, { status: 404 })
+    }
+
+    if (['cancel', 'cancel-low-confirmation'].includes(action)) {
+      const { error: cancelSignupsError } = await adminClient
+        .from('event_signups')
+        .update({
+          status: 'cancelled',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('event_id', updatedEvent.id)
+        .in('status', ['going', 'waitlisted'])
+
+      if (cancelSignupsError) {
+        throw new Error(cancelSignupsError.message)
+      }
     }
 
     const shouldRecomputeScores =
@@ -795,29 +921,40 @@ export async function PATCH(request: Request) {
       await syncEventSignupScores(adminClient, updatedEvent.id)
     }
 
-    await notifyAttendeesForUpdate(action, updatedEvent)
-
-    const { count: attendeeCount, error: countError } = await adminClient
-      .from('event_signups')
-      .select('id', { count: 'exact', head: true })
-      .eq('event_id', updatedEvent.id)
-      .eq('status', 'going')
-
-    if (countError) {
-      throw new Error(countError.message)
+    if (updatedEvent.status !== 'cancelled') {
+      await refreshEventViability(adminClient, updatedEvent.id)
     }
+
+    await notifyAttendeesForUpdate(action, {
+      ...updatedEvent,
+      attendeeCount: 0,
+      attendees: [],
+      attendedCount: 0,
+      average_group_rating: null,
+      average_venue_rating: null,
+      confirmedTodayCount: 0,
+      dropoffCount: 0,
+      feedback_count: 0,
+      noShowCount: 0,
+      waitlistCount: 0,
+      would_join_again_count: 0,
+    })
 
     return NextResponse.json({
       event: {
         ...updatedEvent,
-        attendeeCount: attendeeCount ?? 0,
-        attendedCount: 0,
+        attendeeCount: 0,
         attendees: [],
+        attendedCount: 0,
+        average_group_rating: null,
+        average_venue_rating: null,
         confirmedTodayCount: 0,
         dropoffCount: 0,
+        feedback_count: 0,
         noShowCount: 0,
         waitlistCount: 0,
-      },
+        would_join_again_count: 0,
+      } satisfies EventSummary,
       ok: true,
     })
   } catch (error) {

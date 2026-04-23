@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import {
   determineActiveSignupStatus,
   promoteWaitlistedAttendees,
+  refreshEventViability,
   syncEventSignupScores,
 } from '@/lib/event-operations'
 import { hasEventStarted } from '@/lib/event-time'
@@ -174,6 +175,7 @@ export async function PATCH(request: Request) {
     }
 
     await syncEventSignupScores(adminClient, eventId)
+    await refreshEventViability(adminClient, eventId)
 
     const notification = buildAttendeeNotification(action, event)
     await queueNotifications([

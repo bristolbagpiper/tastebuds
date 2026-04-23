@@ -25,6 +25,7 @@ type EventRow = {
   starts_at: string
   status: 'open' | 'closed' | 'cancelled'
   title: string
+  viability_status: 'healthy' | 'at_risk' | 'forced_go' | 'cancelled_low_confirmations'
 }
 
 type SignupRow = {
@@ -47,6 +48,15 @@ type ProfileRow = {
   max_travel_minutes: number | null
   neighbourhood: string | null
   subregion: string | null
+}
+
+type FeedbackRow = {
+  event_id: number
+  group_rating: number
+  notes: string | null
+  user_id: string
+  venue_rating: number
+  would_join_again: boolean
 }
 
 function parseBearerToken(request: Request) {
@@ -94,10 +104,10 @@ export async function GET(request: Request) {
     const { data: events, error: eventsError } = await adminClient
       .from('events')
       .select(
-        'capacity, description, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title'
+        'capacity, description, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, viability_status'
       )
       .neq('status', 'cancelled')
-      .gte('starts_at', nowIso)
+      .gte('starts_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .order('starts_at', { ascending: true })
       .limit(40)
       .returns<EventRow[]>()
@@ -126,6 +136,17 @@ export async function GET(request: Request) {
 
     if (allSignupsError) {
       throw new Error(allSignupsError.message)
+    }
+
+    const { data: feedbackRows, error: feedbackError } = await adminClient
+      .from('event_feedback')
+      .select('event_id, group_rating, notes, user_id, venue_rating, would_join_again')
+      .in('event_id', eventIds)
+      .eq('user_id', user.id)
+      .returns<FeedbackRow[]>()
+
+    if (feedbackError) {
+      throw new Error(feedbackError.message)
     }
 
     const attendeeUserIds = Array.from(
@@ -165,6 +186,9 @@ export async function GET(request: Request) {
     >()
     const confirmedTodayCountByEvent = new Map<number, number>()
     const mySignupByEvent = new Map<number, SignupRow>()
+    const myFeedbackByEvent = new Map(
+      (feedbackRows ?? []).map((feedback) => [feedback.event_id, feedback])
+    )
     const waitlistByEvent = new Map<number, SignupRow[]>()
 
     for (const signup of allSignups ?? []) {
@@ -217,6 +241,7 @@ export async function GET(request: Request) {
         const attendeeCount = attendeeCountByEvent.get(event.id) ?? 0
         const confirmedTodayCount = confirmedTodayCountByEvent.get(event.id) ?? 0
         const userSignup = mySignupByEvent.get(event.id)
+        const userFeedback = myFeedbackByEvent.get(event.id) ?? null
         const waitlist = (waitlistByEvent.get(event.id) ?? []).sort((left, right) =>
           left.created_at.localeCompare(right.created_at)
         )
@@ -238,17 +263,40 @@ export async function GET(request: Request) {
           userSignup?.status === 'going' &&
           isSameEventDayInNewYork(event.starts_at) &&
           !hasEventStarted(event.starts_at) &&
+          event.viability_status !== 'forced_go' &&
           confirmedTodayCount < event.minimum_viable_attendees
+        const hasEnded = new Date(event.starts_at).getTime() + event.duration_minutes * 60 * 1000 <=
+          Date.now()
+        const canSubmitFeedback =
+          hasEnded &&
+          ['going', 'attended'].includes(userSignup?.status ?? '')
 
         return {
           ...event,
           attendeeCount,
           attendeePreview: (attendeePreviewByEvent.get(event.id) ?? []).slice(0, 8),
+          canSubmitFeedback,
           canViewAttendees: ['going', 'waitlisted', 'attended', 'no_show'].includes(
             userSignup?.status ?? ''
           ),
           confirmedTodayCount,
           dayOfConfirmationStatus: userSignup?.day_of_confirmation_status ?? null,
+          feedback: userFeedback
+            ? {
+                groupRating: userFeedback.group_rating,
+                notes: userFeedback.notes,
+                submitted: true,
+                venueRating: userFeedback.venue_rating,
+                wouldJoinAgain: userFeedback.would_join_again,
+              }
+            : {
+                groupRating: null,
+                notes: '',
+                submitted: false,
+                venueRating: null,
+                wouldJoinAgain: null,
+              },
+          hasEnded,
           isJoined: ['going', 'waitlisted'].includes(userSignup?.status ?? ''),
           minimumViableAttendees: event.minimum_viable_attendees,
           needsDayOfConfirmation,
@@ -260,6 +308,7 @@ export async function GET(request: Request) {
           shouldReconsiderGoing,
           signupStatus: userSignup?.status ?? null,
           spotsLeft: Math.max(0, event.capacity - attendeeCount),
+          viabilityStatus: event.viability_status,
           waitlistCount: waitlist.length,
           waitlistPosition,
         }

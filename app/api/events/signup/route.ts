@@ -3,8 +3,10 @@ import { NextResponse } from 'next/server'
 import { calculateRestaurantMatchScore, type EventForScoring, type ProfileForScoring } from '@/lib/events'
 import {
   promoteWaitlistedAttendees,
+  refreshEventViability,
   syncEventSignupScores,
 } from '@/lib/event-operations'
+import { isPastWaitlistPromotionCutoff } from '@/lib/event-time'
 import { queueNotifications } from '@/lib/notifications'
 import {
   createServerSupabaseAdminClient,
@@ -148,6 +150,7 @@ export async function POST(request: Request) {
       }
 
       await syncEventSignupScores(adminClient, eventId)
+      await refreshEventViability(adminClient, eventId)
 
       return NextResponse.json({
         eventId,
@@ -194,6 +197,7 @@ export async function POST(request: Request) {
     }
 
     await syncEventSignupScores(adminClient, eventId)
+    await refreshEventViability(adminClient, eventId)
 
     if (joinResult.status === 'waitlisted') {
       const { data: profile, error: profileError } = await adminClient
@@ -259,7 +263,9 @@ export async function POST(request: Request) {
       {
         body:
           joinResult.status === 'waitlisted'
-            ? `You are on the waitlist for ${event.title} at ${event.restaurant_name}. We will notify you if a confirmed seat opens.`
+            ? isPastWaitlistPromotionCutoff(event.starts_at)
+              ? `You are on the waitlist for ${event.title} at ${event.restaurant_name}, but late-day promotion is now closed. A host would need to reopen the seat manually.`
+              : `You are on the waitlist for ${event.title} at ${event.restaurant_name}. We will notify you if a confirmed seat opens.`
             : `You're in for ${event.title} at ${event.restaurant_name}. Restaurant and personal scores are now live on your dashboard.`,
         duplicateBehavior: 'rearm',
         eventId: event.id,

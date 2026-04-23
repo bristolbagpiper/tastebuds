@@ -6,6 +6,7 @@ import { createServerSupabaseAdminClient } from '@/lib/supabase/server'
 export type NotificationType =
   | 'event_signup'
   | 'event_update'
+  | 'event_at_risk'
   | 'event_reminder_24h'
   | 'event_reminder_2h'
   | 'event_follow_up'

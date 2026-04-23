@@ -1,4 +1,5 @@
 const NEW_YORK_TIMEZONE = 'America/New_York'
+export const WAITLIST_PROMOTION_CUTOFF_HOURS = 4
 
 function formatDateKey(value: Date | string) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -19,4 +20,11 @@ export function hasEventStarted(startsAt: string, reference: Date = new Date()) 
 
 export function getHoursUntilEvent(startsAt: string, reference: Date = new Date()) {
   return (new Date(startsAt).getTime() - reference.getTime()) / (60 * 60 * 1000)
+}
+
+export function isPastWaitlistPromotionCutoff(
+  startsAt: string,
+  reference: Date = new Date()
+) {
+  return getHoursUntilEvent(startsAt, reference) <= WAITLIST_PROMOTION_CUTOFF_HOURS
 }
