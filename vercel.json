@@ -2,7 +2,7 @@
   "crons": [
     {
       "path": "/api/send-notification-emails?limit=60",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 14 * * *"
     },
     {
       "path": "/api/cleanup-notifications?days=30&limit=500",

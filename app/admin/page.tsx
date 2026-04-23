@@ -7,9 +7,25 @@ import { MANHATTAN_SUBREGIONS, parseCuisinePreferenceInput } from '@/lib/events'
 import { supabase } from '@/lib/supabase/client'
 
 type EventIntent = 'dating' | 'friendship'
+type EventAction = 'cancel' | 'close' | 'reopen' | 'update'
+type AttendeeAction = 'mark-no-show' | 'remove' | 'restore'
+
+type AdminEventAttendee = {
+  cuisine_preferences: string[] | null
+  display_name: string | null
+  email: string | null
+  neighbourhood: string | null
+  personal_match_score: number
+  personal_match_summary: string | null
+  restaurant_match_score: number
+  signup_status: 'cancelled' | 'going' | 'no_show' | 'removed'
+  subregion: string | null
+  user_id: string
+}
 
 type AdminEvent = {
   attendeeCount: number
+  attendees: AdminEventAttendee[]
   capacity: number
   created_at: string
   description: string | null
@@ -41,12 +57,43 @@ function toLocalDateTimeInputValue(date: Date) {
   return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
+function getDefaultStartsAt() {
+  return toLocalDateTimeInputValue(new Date(Date.now() + 48 * 60 * 60 * 1000))
+}
+
+function toInputDateValue(iso: string) {
+  const nextDate = new Date(iso)
+
+  if (Number.isNaN(nextDate.getTime())) {
+    return getDefaultStartsAt()
+  }
+
+  return toLocalDateTimeInputValue(nextDate)
+}
+
 function formatEventDate(value: string) {
   return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'full',
     timeStyle: 'short',
     timeZone: 'America/New_York',
   }).format(new Date(value))
+}
+
+function formatIntent(intent: EventIntent) {
+  return intent === 'dating' ? 'Dating' : 'Friendship'
+}
+
+function formatSignupStatus(status: AdminEventAttendee['signup_status']) {
+  switch (status) {
+    case 'going':
+      return 'Going'
+    case 'no_show':
+      return 'No-show'
+    case 'removed':
+      return 'Removed'
+    default:
+      return 'Cancelled'
+  }
 }
 
 export default function AdminPage() {
@@ -56,15 +103,18 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [retryingEmails, setRetryingEmails] = useState(false)
+  const [eventActionLoadingId, setEventActionLoadingId] = useState<number | null>(
+    null
+  )
+  const [attendeeActionKey, setAttendeeActionKey] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [emailResult, setEmailResult] = useState<EmailRetryResult | null>(null)
+  const [editingEventId, setEditingEventId] = useState<number | null>(null)
 
   const [title, setTitle] = useState('')
   const [intent, setIntent] = useState<EventIntent>('dating')
-  const [startsAt, setStartsAt] = useState(
-    toLocalDateTimeInputValue(new Date(Date.now() + 48 * 60 * 60 * 1000))
-  )
+  const [startsAt, setStartsAt] = useState(getDefaultStartsAt())
   const [restaurantName, setRestaurantName] = useState('')
   const [restaurantSubregion, setRestaurantSubregion] =
     useState<(typeof MANHATTAN_SUBREGIONS)[number]>('Midtown')
@@ -135,11 +185,16 @@ export default function AdminPage() {
     }
   }, [router])
 
-  async function refreshEvents() {
+  async function getAccessToken() {
     const {
       data: { session },
     } = await supabase.auth.getSession()
-    const accessToken = session?.access_token
+
+    return session?.access_token ?? null
+  }
+
+  async function refreshEvents() {
+    const accessToken = await getAccessToken()
 
     if (!accessToken) {
       setError('Missing active session. Log in again.')
@@ -165,17 +220,44 @@ export default function AdminPage() {
     setEvents(payload.events ?? [])
   }
 
-  async function createEvent(event: React.FormEvent<HTMLFormElement>) {
+  function resetEventForm() {
+    setEditingEventId(null)
+    setTitle('')
+    setIntent('dating')
+    setStartsAt(getDefaultStartsAt())
+    setRestaurantName('')
+    setRestaurantSubregion('Midtown')
+    setRestaurantNeighbourhood('')
+    setRestaurantCuisines('')
+    setCapacity('12')
+    setDescription('')
+  }
+
+  function loadEventForEdit(nextEvent: AdminEvent) {
+    setError('')
+    setSuccess('')
+    setEditingEventId(nextEvent.id)
+    setTitle(nextEvent.title)
+    setIntent(nextEvent.intent)
+    setStartsAt(toInputDateValue(nextEvent.starts_at))
+    setRestaurantName(nextEvent.restaurant_name)
+    setRestaurantSubregion(
+      nextEvent.restaurant_subregion as (typeof MANHATTAN_SUBREGIONS)[number]
+    )
+    setRestaurantNeighbourhood(nextEvent.restaurant_neighbourhood ?? '')
+    setRestaurantCuisines(nextEvent.restaurant_cuisines.join(', '))
+    setCapacity(String(nextEvent.capacity))
+    setDescription(nextEvent.description ?? '')
+  }
+
+  async function createOrUpdateEvent(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setError('')
     setSuccess('')
     setSubmitting(true)
     setEmailResult(null)
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    const accessToken = session?.access_token
+    const accessToken = await getAccessToken()
 
     if (!accessToken) {
       setError('Missing active session. Log in again.')
@@ -183,23 +265,27 @@ export default function AdminPage() {
       return
     }
 
+    const body = {
+      action: 'update' as EventAction,
+      capacity: Number(capacity),
+      description,
+      eventId: editingEventId,
+      intent,
+      restaurantCuisines: parseCuisinePreferenceInput(restaurantCuisines),
+      restaurantName,
+      restaurantNeighbourhood,
+      restaurantSubregion,
+      startsAt: new Date(startsAt).toISOString(),
+      title,
+    }
+
     const response = await fetch('/api/admin/events', {
-      body: JSON.stringify({
-        capacity: Number(capacity),
-        description,
-        intent,
-        restaurantCuisines: parseCuisinePreferenceInput(restaurantCuisines),
-        restaurantName,
-        restaurantNeighbourhood,
-        restaurantSubregion,
-        startsAt: new Date(startsAt).toISOString(),
-        title,
-      }),
+      body: JSON.stringify(body),
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-      method: 'POST',
+      method: editingEventId ? 'PATCH' : 'POST',
     })
 
     const payload = (await response.json()) as {
@@ -208,22 +294,120 @@ export default function AdminPage() {
     }
 
     if (!response.ok || payload.error || !payload.event) {
-      setError(payload.error ?? 'Failed to create event.')
+      setError(
+        payload.error ??
+          (editingEventId ? 'Failed to update event.' : 'Failed to create event.')
+      )
       setSubmitting(false)
       return
     }
 
-    setSuccess('Event created.')
+    setSuccess(editingEventId ? 'Event updated.' : 'Event created.')
     setSubmitting(false)
-    setTitle('')
-    setRestaurantName('')
-    setRestaurantNeighbourhood('')
-    setRestaurantCuisines('')
-    setDescription('')
-    setCapacity('12')
-    setStartsAt(toLocalDateTimeInputValue(new Date(Date.now() + 48 * 60 * 60 * 1000)))
-    setIntent('dating')
-    setRestaurantSubregion('Midtown')
+    resetEventForm()
+    await refreshEvents()
+  }
+
+  async function runEventAction(eventId: number, action: EventAction) {
+    setError('')
+    setSuccess('')
+    setEventActionLoadingId(eventId)
+
+    const accessToken = await getAccessToken()
+
+    if (!accessToken) {
+      setError('Missing active session. Log in again.')
+      setEventActionLoadingId(null)
+      return
+    }
+
+    const response = await fetch('/api/admin/events', {
+      body: JSON.stringify({ action, eventId }),
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      method: 'PATCH',
+    })
+
+    const payload = (await response.json()) as {
+      error?: string
+    }
+
+    if (!response.ok || payload.error) {
+      setError(payload.error ?? 'Could not update event state.')
+      setEventActionLoadingId(null)
+      return
+    }
+
+    setSuccess(
+      action === 'close'
+        ? 'Event closed.'
+        : action === 'cancel'
+          ? 'Event cancelled.'
+          : action === 'reopen'
+            ? 'Event reopened.'
+            : 'Event updated.'
+    )
+    setEventActionLoadingId(null)
+
+    if (editingEventId === eventId && action !== 'update') {
+      resetEventForm()
+    }
+
+    await refreshEvents()
+  }
+
+  async function runAttendeeAction(
+    eventId: number,
+    userId: string,
+    action: AttendeeAction
+  ) {
+    setError('')
+    setSuccess('')
+
+    const actionKey = `${eventId}:${userId}:${action}`
+    setAttendeeActionKey(actionKey)
+
+    const accessToken = await getAccessToken()
+
+    if (!accessToken) {
+      setError('Missing active session. Log in again.')
+      setAttendeeActionKey(null)
+      return
+    }
+
+    const response = await fetch('/api/admin/event-signups', {
+      body: JSON.stringify({
+        action,
+        eventId,
+        userId,
+      }),
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      method: 'PATCH',
+    })
+
+    const payload = (await response.json()) as {
+      error?: string
+    }
+
+    if (!response.ok || payload.error) {
+      setError(payload.error ?? 'Could not update attendee.')
+      setAttendeeActionKey(null)
+      return
+    }
+
+    setSuccess(
+      action === 'remove'
+        ? 'Attendee removed.'
+        : action === 'mark-no-show'
+          ? 'Attendee marked as no-show.'
+          : 'Attendee restored.'
+    )
+    setAttendeeActionKey(null)
     await refreshEvents()
   }
 
@@ -232,10 +416,7 @@ export default function AdminPage() {
     setEmailResult(null)
     setError('')
 
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    const accessToken = session?.access_token
+    const accessToken = await getAccessToken()
 
     if (!accessToken) {
       setError('Missing active session. Log in again.')
@@ -317,8 +498,10 @@ export default function AdminPage() {
       ) : null}
 
       <section className="mt-8 rounded-[1.75rem] border border-zinc-200 bg-zinc-50 p-6">
-        <h2 className="text-xl font-semibold text-zinc-950">New event</h2>
-        <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={createEvent}>
+        <h2 className="text-xl font-semibold text-zinc-950">
+          {editingEventId ? 'Edit event' : 'New event'}
+        </h2>
+        <form className="mt-5 grid gap-4 sm:grid-cols-2" onSubmit={createOrUpdateEvent}>
           <label className="space-y-2 sm:col-span-2">
             <span className="text-sm font-medium text-zinc-700">Event title</span>
             <input
@@ -439,8 +622,23 @@ export default function AdminPage() {
               disabled={submitting}
               type="submit"
             >
-              {submitting ? 'Creating event...' : 'Create event'}
+              {submitting
+                ? editingEventId
+                  ? 'Updating event...'
+                  : 'Creating event...'
+                : editingEventId
+                  ? 'Update event'
+                  : 'Create event'}
             </button>
+            {editingEventId ? (
+              <button
+                className="rounded-xl border border-zinc-950 px-5 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
+                onClick={resetEventForm}
+                type="button"
+              >
+                Cancel edit
+              </button>
+            ) : null}
             <button
               className="rounded-xl border border-zinc-950 px-5 py-3 font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
               disabled={retryingEmails}
@@ -467,13 +665,13 @@ export default function AdminPage() {
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-                      {event.intent}
+                      {formatIntent(event.intent)}
                     </p>
                     <h3 className="mt-2 text-2xl font-semibold text-zinc-950">
                       {event.title}
                     </h3>
                     <p className="mt-2 text-sm text-zinc-700">
-                      {event.restaurant_name} · {event.restaurant_subregion}
+                      {event.restaurant_name} - {event.restaurant_subregion}
                       {event.restaurant_neighbourhood
                         ? `, ${event.restaurant_neighbourhood}`
                         : ''}
@@ -505,6 +703,175 @@ export default function AdminPage() {
                     {event.description}
                   </p>
                 ) : null}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
+                    onClick={() => loadEventForEdit(event)}
+                    type="button"
+                  >
+                    Edit
+                  </button>
+                  {event.status === 'open' ? (
+                    <>
+                      <button
+                        className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+                        disabled={eventActionLoadingId === event.id}
+                        onClick={() => void runEventAction(event.id, 'close')}
+                        type="button"
+                      >
+                        {eventActionLoadingId === event.id ? 'Working...' : 'Close'}
+                      </button>
+                      <button
+                        className="rounded-xl border border-red-300 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+                        disabled={eventActionLoadingId === event.id}
+                        onClick={() => void runEventAction(event.id, 'cancel')}
+                        type="button"
+                      >
+                        {eventActionLoadingId === event.id ? 'Working...' : 'Cancel'}
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+                      disabled={eventActionLoadingId === event.id}
+                      onClick={() => void runEventAction(event.id, 'reopen')}
+                      type="button"
+                    >
+                      {eventActionLoadingId === event.id ? 'Working...' : 'Reopen'}
+                    </button>
+                  )}
+                </div>
+                <div className="mt-5 rounded-2xl border border-zinc-200 bg-white p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+                    Attendee roster
+                  </p>
+                  <div className="mt-3 space-y-3">
+                    {event.attendees.length > 0 ? (
+                      event.attendees.map((attendee) => (
+                        <div
+                          className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4"
+                          key={attendee.user_id}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-zinc-950">
+                                {attendee.display_name ?? 'Unnamed user'}
+                              </p>
+                              <p className="mt-1 text-sm text-zinc-600">
+                                {attendee.subregion ?? 'Unknown area'}
+                                {attendee.neighbourhood
+                                  ? `, ${attendee.neighbourhood}`
+                                  : ''}
+                              </p>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                {attendee.email ?? 'No email'}
+                              </p>
+                            </div>
+                            <div className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700">
+                              <p>
+                                Status:{' '}
+                                <span className="font-medium text-zinc-950">
+                                  {formatSignupStatus(attendee.signup_status)}
+                                </span>
+                              </p>
+                              <p className="mt-1">
+                                Restaurant score:{' '}
+                                <span className="font-medium text-zinc-950">
+                                  {attendee.restaurant_match_score}
+                                </span>
+                              </p>
+                              <p className="mt-1">
+                                Personal score:{' '}
+                                <span className="font-medium text-zinc-950">
+                                  {attendee.personal_match_score}
+                                </span>
+                              </p>
+                            </div>
+                          </div>
+                          {attendee.cuisine_preferences?.length ? (
+                            <p className="mt-3 text-sm text-zinc-600">
+                              Cuisine prefs: {attendee.cuisine_preferences.join(', ')}
+                            </p>
+                          ) : null}
+                          {attendee.personal_match_summary ? (
+                            <p className="mt-2 text-sm text-zinc-600">
+                              {attendee.personal_match_summary}
+                            </p>
+                          ) : null}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {attendee.signup_status === 'going' ? (
+                              <>
+                                <button
+                                  className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+                                  disabled={
+                                    attendeeActionKey ===
+                                    `${event.id}:${attendee.user_id}:mark-no-show`
+                                  }
+                                  onClick={() =>
+                                    void runAttendeeAction(
+                                      event.id,
+                                      attendee.user_id,
+                                      'mark-no-show'
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  {attendeeActionKey ===
+                                  `${event.id}:${attendee.user_id}:mark-no-show`
+                                    ? 'Working...'
+                                    : 'Mark no-show'}
+                                </button>
+                                <button
+                                  className="rounded-xl border border-red-300 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+                                  disabled={
+                                    attendeeActionKey ===
+                                    `${event.id}:${attendee.user_id}:remove`
+                                  }
+                                  onClick={() =>
+                                    void runAttendeeAction(
+                                      event.id,
+                                      attendee.user_id,
+                                      'remove'
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  {attendeeActionKey ===
+                                  `${event.id}:${attendee.user_id}:remove`
+                                    ? 'Working...'
+                                    : 'Remove'}
+                                </button>
+                              </>
+                            ) : (
+                              <button
+                                className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
+                                disabled={
+                                  attendeeActionKey ===
+                                  `${event.id}:${attendee.user_id}:restore`
+                                }
+                                onClick={() =>
+                                  void runAttendeeAction(
+                                    event.id,
+                                    attendee.user_id,
+                                    'restore'
+                                  )
+                                }
+                                type="button"
+                              >
+                                {attendeeActionKey ===
+                                `${event.id}:${attendee.user_id}:restore`
+                                  ? 'Working...'
+                                  : 'Restore'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-zinc-600">No attendees yet.</p>
+                    )}
+                  </div>
+                </div>
               </article>
             ))
           ) : (

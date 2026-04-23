@@ -7,15 +7,10 @@ export type NotificationType =
   | 'event_reminder'
   | 'event_signup'
   | 'event_update'
-  | 'match_accepted'
-  | 'match_confirmed'
-  | 'match_declined'
-  | 'match_proposed'
 
 type NotificationInput = {
   body: string
-  eventId?: number | null
-  matchId?: number | null
+  eventId: number
   title: string
   type: NotificationType
   userId: string
@@ -28,28 +23,18 @@ type QueuedNotificationRow = {
   user_id: string
 }
 
-type AdminClient = any
+type AdminClient = ReturnType<typeof createServerSupabaseAdminClient>
 
 async function rearmExistingNotification(
   adminClient: AdminClient,
   notification: NotificationInput
 ) {
-  let query = adminClient
+  const query = adminClient
     .from('notifications')
     .select('body, id, title, user_id')
     .eq('user_id', notification.userId)
     .eq('type', notification.type)
-
-  if (notification.eventId !== null && notification.eventId !== undefined) {
-    query = query.eq('event_id', notification.eventId)
-  } else if (
-    notification.matchId !== null &&
-    notification.matchId !== undefined
-  ) {
-    query = query.eq('match_id', notification.matchId)
-  } else {
-    return null
-  }
+    .eq('event_id', notification.eventId)
 
   const { data: existingNotification, error: findError } =
     await query.maybeSingle()
@@ -191,8 +176,7 @@ export async function queueNotifications(notifications: NotificationInput[]) {
       .from('notifications')
       .insert({
         body: notification.body,
-        event_id: notification.eventId ?? null,
-        match_id: notification.matchId ?? null,
+        event_id: notification.eventId,
         title: notification.title,
         type: notification.type,
         user_id: notification.userId,

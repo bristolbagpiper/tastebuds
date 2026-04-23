@@ -31,6 +31,12 @@ type SignupRow = {
   status: 'going' | 'cancelled'
 }
 
+type JoinEventResultRow = {
+  error: string | null
+  ok: boolean
+  status: 'going' | 'full' | 'closed' | 'not_found'
+}
+
 function parseBearerToken(request: Request) {
   const authorization = request.headers.get('authorization')
 
@@ -115,46 +121,41 @@ export async function POST(request: Request) {
       })
     }
 
-    const { data: existingSignup } = await adminClient
-      .from('event_signups')
-      .select('status')
-      .eq('event_id', eventId)
-      .eq('user_id', user.id)
-      .maybeSingle<{ status: 'going' | 'cancelled' }>()
+    const joinRpcResponse = await adminClient.rpc('join_event_signup_safe', {
+      p_event_id: eventId,
+      p_user_id: user.id,
+    })
 
-    const { count: attendeeCount, error: countError } = await adminClient
-      .from('event_signups')
-      .select('id', { count: 'exact', head: true })
-      .eq('event_id', eventId)
-      .eq('status', 'going')
+    const joinRpcError = joinRpcResponse.error
 
-    if (countError) {
-      throw new Error(countError.message)
+    if (joinRpcError) {
+      throw new Error(joinRpcError.message)
     }
 
-    if (existingSignup?.status !== 'going' && (attendeeCount ?? 0) >= event.capacity) {
+    const joinResultRows = Array.isArray(joinRpcResponse.data)
+      ? (joinRpcResponse.data as JoinEventResultRow[])
+      : []
+    const joinResult = joinResultRows[0]
+
+    if (!joinResult?.ok) {
+      if (joinResult?.status === 'not_found') {
+        return NextResponse.json(
+          { error: joinResult.error ?? 'Event not found.' },
+          { status: 404 }
+        )
+      }
+
+      if (joinResult?.status === 'full') {
+        return NextResponse.json(
+          { error: joinResult.error ?? 'This event is already full.' },
+          { status: 409 }
+        )
+      }
+
       return NextResponse.json(
-        { error: 'This event is already full.' },
-        { status: 409 }
+        { error: joinResult?.error ?? 'This event is not open for signups.' },
+        { status: 400 }
       )
-    }
-
-    const { error: joinError } = await adminClient
-      .from('event_signups')
-      .upsert(
-        {
-          event_id: eventId,
-          status: 'going',
-          updated_at: new Date().toISOString(),
-          user_id: user.id,
-        },
-        {
-          onConflict: 'event_id,user_id',
-        }
-      )
-
-    if (joinError) {
-      throw new Error(joinError.message)
     }
 
     await recomputeEventSignupScores(adminClient, eventId)

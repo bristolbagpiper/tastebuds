@@ -7,8 +7,9 @@ import {
   type EventForScoring,
   type ProfileForScoring,
 } from '@/lib/events'
+import type { createServerSupabaseAdminClient } from '@/lib/supabase/server'
 
-type AdminClient = any
+type AdminClient = ReturnType<typeof createServerSupabaseAdminClient>
 
 type EventRow = {
   id: number

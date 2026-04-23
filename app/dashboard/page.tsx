@@ -624,7 +624,7 @@ export default function DashboardPage() {
                       {event.title}
                     </h2>
                     <p className="mt-2 text-sm text-zinc-700">
-                      {event.restaurant_name} · {event.restaurant_subregion}
+                      {event.restaurant_name} - {event.restaurant_subregion}
                       {event.restaurant_neighbourhood
                         ? `, ${event.restaurant_neighbourhood}`
                         : ''}

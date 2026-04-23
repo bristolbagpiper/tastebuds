@@ -25,7 +25,7 @@ type SignupRow = {
   personal_match_score: number
   personal_match_summary: string | null
   restaurant_match_score: number
-  status: 'going' | 'cancelled'
+  status: 'going' | 'cancelled' | 'no_show' | 'removed'
   user_id: string
 }
 
