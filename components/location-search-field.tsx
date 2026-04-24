@@ -119,25 +119,29 @@ export function LocationSearchField({
 
   return (
     <div className="space-y-2 sm:col-span-2">
-      <span className="text-sm font-medium text-zinc-700">{label}</span>
+      <span className="text-sm font-medium text-[color:var(--foreground)]">{label}</span>
       <input
-        className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+        className="tb-input"
         onChange={(event) => setQuery(event.target.value)}
         placeholder={placeholder}
         value={query}
       />
       <p
         className={`text-xs ${
-          error ? 'text-red-600' : providerConfigured ? 'text-zinc-500' : 'text-amber-700'
+          error
+            ? 'text-[color:var(--accent-strong)]'
+            : providerConfigured
+              ? 'tb-label'
+              : 'text-[color:var(--accent-strong)]'
         }`}
       >
         {helperText}
       </p>
       {showSuggestions ? (
-        <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+        <div className="tb-panel overflow-hidden rounded-3xl">
           {suggestions.map((suggestion) => (
             <button
-              className="flex w-full items-start justify-between gap-4 border-b border-zinc-200 px-4 py-3 text-left transition last:border-b-0 hover:bg-zinc-50"
+              className="flex w-full items-start justify-between gap-4 border-b border-[color:var(--border-soft)] px-4 py-3 text-left transition last:border-b-0 hover:bg-[color:var(--surface-strong)]"
               key={`${suggestion.label}:${suggestion.latitude}:${suggestion.longitude}`}
               onClick={() => {
                 onPick(suggestion)
@@ -146,14 +150,14 @@ export function LocationSearchField({
               type="button"
             >
               <span>
-                <span className="block text-sm font-medium text-zinc-950">
+                <span className="block text-sm font-medium text-[color:var(--foreground)]">
                   {suggestion.label}
                 </span>
-                <span className="mt-1 block text-xs text-zinc-500">
+                <span className="tb-label mt-1 block text-xs">
                   {suggestion.secondaryLabel ?? 'Manhattan'}
                 </span>
               </span>
-              <span className="text-xs text-zinc-500">{suggestion.subregion}</span>
+              <span className="tb-label text-xs">{suggestion.subregion}</span>
             </button>
           ))}
         </div>

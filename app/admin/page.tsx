@@ -961,7 +961,7 @@ export default function AdminPage() {
   async function deleteRestaurant(restaurant: AdminRestaurant) {
     if (
       !window.confirm(
-        `Delete "${restaurant.name}" permanently? This only works if no events reference it.`
+        `Delete "${restaurant.name}" permanently? This also deletes any events scheduled from it and their signups, notifications, and feedback.`
       )
     ) {
       return
@@ -1067,7 +1067,7 @@ export default function AdminPage() {
   async function deleteEvent(event: AdminEvent) {
     if (
       !window.confirm(
-        `Delete "${event.title}" permanently? This also deletes its signups, notifications, and feedback.`
+        `Delete "${event.title}" permanently? This deletes it even if it has not happened yet, along with its signups, notifications, and feedback.`
       )
     ) {
       return

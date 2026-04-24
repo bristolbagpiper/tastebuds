@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
+import { AuthShell } from '@/components/app/AuthShell'
+import { Button } from '@/components/app/Button'
 import { supabase } from '@/lib/supabase/client'
 
 export default function SignupPage() {
@@ -76,21 +78,47 @@ export default function SignupPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center p-8">
-      <p className="mb-3 text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
-        TasteBuds
-      </p>
-      <h1 className="text-3xl font-semibold text-zinc-950">Create your account</h1>
-      <p className="mt-3 text-sm text-zinc-600">
+    <AuthShell
+      aside={
+        <>
+          <div>
+            <p className="tb-label text-sm font-medium uppercase tracking-[0.24em]">
+              New account
+            </p>
+            <h1 className="mt-5 text-5xl font-semibold tracking-tight text-[color:var(--foreground)]">
+              Build the profile that drives your night.
+            </h1>
+            <p className="tb-copy mt-6 max-w-xl text-lg leading-8">
+              Account creation is intentionally plain. The richer part happens after signup,
+              when the app starts ranking restaurants and events around actual taste.
+            </p>
+          </div>
+          <div className="tb-panel mt-8 rounded-3xl p-6">
+            <p className="tb-label text-xs font-medium uppercase tracking-[0.16em]">
+              What happens next
+            </p>
+            <ul className="tb-copy mt-4 space-y-3 text-sm leading-6">
+              <li>Create account and confirm email if required</li>
+              <li>Complete the taste profile and home anchor</li>
+              <li>Start saving restaurants and joining the right events</li>
+            </ul>
+          </div>
+        </>
+      }
+      title="Sign up"
+    >
+      <p className="tb-label text-sm font-medium uppercase tracking-[0.2em]">Create account</p>
+      <h1 className="mt-3 text-3xl font-semibold text-[color:var(--foreground)]">Start with your login</h1>
+      <p className="tb-copy mt-3 text-sm leading-6">
         Start with email and password. Google SSO can be added once the provider
         is fully configured in Supabase.
       </p>
 
       <form onSubmit={handleSignup} className="mt-8 space-y-4">
         <label className="block space-y-2">
-          <span className="text-sm font-medium text-zinc-700">Email</span>
+          <span className="text-sm font-medium text-[color:var(--foreground)]">Email</span>
           <input
-            className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+            className="tb-input"
             type="email"
             autoComplete="email"
             placeholder="you@example.com"
@@ -101,9 +129,9 @@ export default function SignupPage() {
         </label>
 
         <label className="block space-y-2">
-          <span className="text-sm font-medium text-zinc-700">Password</span>
+          <span className="text-sm font-medium text-[color:var(--foreground)]">Password</span>
           <input
-            className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+            className="tb-input"
             type="password"
             autoComplete="new-password"
             minLength={6}
@@ -114,24 +142,28 @@ export default function SignupPage() {
           />
         </label>
 
-        <button
-          className="w-full rounded-xl bg-zinc-950 px-4 py-3 font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-          type="submit"
-          disabled={loading}
-        >
+        <Button className="w-full" disabled={loading} type="submit">
           {loading ? 'Creating account...' : 'Sign up'}
-        </button>
+        </Button>
       </form>
 
-      {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
-      {message && <p className="mt-4 text-sm text-emerald-700">{message}</p>}
+      {error ? (
+        <p className="mt-4 rounded-2xl border border-[color:color-mix(in_srgb,var(--accent)_28%,white)] bg-[color:color-mix(in_srgb,var(--accent)_10%,var(--surface))] p-3 text-sm text-[color:var(--accent-strong)]">
+          {error}
+        </p>
+      ) : null}
+      {message ? (
+        <p className="mt-4 rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--surface-soft)] p-3 text-sm text-[color:var(--foreground)]">
+          {message}
+        </p>
+      ) : null}
 
-      <p className="mt-6 text-sm text-zinc-600">
+      <p className="tb-copy mt-6 text-sm">
         Already have an account?{' '}
-        <Link className="font-medium text-zinc-950 underline" href="/login">
+        <Link className="font-medium text-[color:var(--foreground)] underline" href="/login">
           Log in
         </Link>
       </p>
-    </main>
+    </AuthShell>
   )
 }

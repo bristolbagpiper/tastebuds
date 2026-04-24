@@ -1092,13 +1092,6 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'Event not found.' }, { status: 404 })
   }
 
-  if (!hasEventEnded(currentEvent.starts_at, currentEvent.duration_minutes)) {
-    return NextResponse.json(
-      { error: 'Only past events can be deleted.' },
-      { status: 400 }
-    )
-  }
-
   const { error } = await adminClient.from('events').delete().eq('id', eventId)
 
   if (error) {

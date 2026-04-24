@@ -607,13 +607,17 @@ export async function DELETE(request: Request) {
   }
 
   if ((count ?? 0) > 0) {
-    return NextResponse.json(
-      {
-        error:
-          'This restaurant is already referenced by events. Archive it instead of deleting it.',
-      },
-      { status: 400 }
-    )
+    const { error: deleteEventsError } = await adminClient
+      .from('events')
+      .delete()
+      .eq('restaurant_id', restaurantId)
+
+    if (deleteEventsError) {
+      return NextResponse.json(
+        { error: deleteEventsError.message },
+        { status: 500 }
+      )
+    }
   }
 
   const { error } = await adminClient.from('restaurants').delete().eq('id', restaurantId)

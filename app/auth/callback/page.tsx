@@ -1,9 +1,10 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
+import { AuthShell } from '@/components/app/AuthShell'
+import { Button } from '@/components/app/Button'
 import { supabase } from '@/lib/supabase/client'
 
 export default function AuthCallbackPage() {
@@ -82,27 +83,42 @@ export default function AuthCallbackPage() {
   }, [router])
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center p-8">
-      <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
+    <AuthShell
+      aside={
+        <div>
+          <p className="tb-label text-sm font-medium uppercase tracking-[0.24em]">
+            Authentication
+          </p>
+          <h1 className="mt-5 text-5xl font-semibold tracking-tight text-[color:var(--foreground)]">
+            Finishing sign-in.
+          </h1>
+          <p className="tb-copy mt-6 max-w-xl text-lg leading-8">
+            Supabase is exchanging the auth result and restoring the session locally.
+          </p>
+        </div>
+      }
+      title="Authentication"
+    >
+      <p className="tb-label text-sm font-medium uppercase tracking-[0.2em]">
         Authentication
       </p>
-      <h1 className="mt-3 text-3xl font-semibold text-zinc-950">
+      <h1 className="mt-3 text-3xl font-semibold text-[color:var(--foreground)]">
         Finishing sign-in
       </h1>
-      <p className="mt-4 text-sm text-zinc-600">
+      <p className="tb-copy mt-4 text-sm leading-6">
         Completing the redirect from Supabase and storing the session locally.
       </p>
 
       {error ? (
-        <div className="mt-6 space-y-4 rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+        <div className="mt-6 space-y-4 rounded-3xl border border-[color:color-mix(in_srgb,var(--accent)_28%,white)] bg-[color:color-mix(in_srgb,var(--accent)_10%,var(--surface))] p-5 text-sm text-[color:var(--accent-strong)]">
           <p>{error}</p>
-          <Link className="font-medium underline" href="/login">
+          <Button href="/login" variant="secondary">
             Go back to login
-          </Link>
+          </Button>
         </div>
       ) : (
-        <p className="mt-6 text-sm text-zinc-600">Signing you in...</p>
+        <p className="tb-copy mt-6 text-sm">Signing you in...</p>
       )}
-    </main>
+    </AuthShell>
   )
 }
