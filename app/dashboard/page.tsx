@@ -10,9 +10,17 @@ type Profile = {
   bio: string | null
   cuisine_preferences: string[] | null
   display_name: string | null
+  home_latitude: number | null
+  home_longitude: number | null
   intent: 'dating' | 'friendship' | null
   max_travel_minutes: number | null
   neighbourhood: string | null
+  preferred_crowd: string[] | null
+  preferred_energy: string[] | null
+  preferred_music: string[] | null
+  preferred_price: string[] | null
+  preferred_scene: string[] | null
+  preferred_setting: string[] | null
   subregion: string | null
 }
 
@@ -58,6 +66,14 @@ type DashboardEvent = {
   restaurant_name: string
   restaurant_neighbourhood: string | null
   restaurant_subregion: string
+  venue_crowd: string[] | null
+  venueDistanceKm: number | null
+  venue_energy: string | null
+  venueMatchSummary: string
+  venue_music: string[] | null
+  venue_price: string | null
+  venue_scene: string[] | null
+  venue_setting: string[] | null
   shouldReconsiderGoing: boolean
   signupStatus: 'going' | 'waitlisted' | 'cancelled' | 'removed' | 'no_show' | 'attended' | null
   spotsLeft: number
@@ -74,6 +90,39 @@ type FeedbackDraft = {
   notes: string
   venueRating: string
   wouldJoinAgain: '' | 'no' | 'yes'
+}
+
+type DashboardRestaurant = {
+  availableEventCount: number
+  availableEvents: {
+    id: number
+    signupStatus: 'going' | 'waitlisted' | null
+    startsAt: string
+    title: string
+    viabilityStatus: 'healthy' | 'at_risk' | 'forced_go' | 'cancelled_low_confirmations'
+  }[]
+  formattedAddress: string | null
+  googleEditorialSummary: string | null
+  googleMapsUri: string | null
+  googlePriceLevel: string | null
+  googleRating: number | null
+  googleUserRatingsTotal: number | null
+  googleWebsiteUri: string | null
+  id: number
+  isSaved: boolean
+  matchScore: number
+  name: string
+  neighbourhood: string | null
+  restaurant_cuisines: string[] | null
+  subregion: string
+  venueDistanceKm: number | null
+  venueMatchSummary: string
+  venue_crowd: string[] | null
+  venue_energy: string | null
+  venue_music: string[] | null
+  venue_price: string | null
+  venue_scene: string[] | null
+  venue_setting: string[] | null
 }
 
 function formatEventDate(value: string) {
@@ -164,11 +213,31 @@ function toFeedbackDraft(event: DashboardEvent): FeedbackDraft {
   }
 }
 
+function renderTagList(values: string[] | null | undefined) {
+  if (!values?.length) {
+    return 'Not set'
+  }
+
+  return values.join(', ')
+}
+
+function isSameCalendarDay(value: string) {
+  const targetDate = new Date(value)
+  const now = new Date()
+
+  return (
+    targetDate.getFullYear() === now.getFullYear() &&
+    targetDate.getMonth() === now.getMonth() &&
+    targetDate.getDate() === now.getDate()
+  )
+}
+
 export default function DashboardPage() {
   const router = useRouter()
   const [email, setEmail] = useState<string | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [events, setEvents] = useState<DashboardEvent[]>([])
+  const [restaurants, setRestaurants] = useState<DashboardRestaurant[]>([])
   const [notifications, setNotifications] = useState<NotificationSummary[]>([])
   const [feedbackDrafts, setFeedbackDrafts] = useState<Record<number, FeedbackDraft>>({})
   const [showUnreadOnly, setShowUnreadOnly] = useState(true)
@@ -176,6 +245,7 @@ export default function DashboardPage() {
   const [setupError, setSetupError] = useState('')
   const [eventActionError, setEventActionError] = useState('')
   const [eventActionLoadingId, setEventActionLoadingId] = useState<number | null>(null)
+  const [restaurantActionLoadingId, setRestaurantActionLoadingId] = useState<number | null>(null)
   const [feedbackSavingId, setFeedbackSavingId] = useState<number | null>(null)
   const [notificationActionLoading, setNotificationActionLoading] = useState(false)
   const [clearReadLoading, setClearReadLoading] = useState(false)
@@ -216,7 +286,7 @@ export default function DashboardPage() {
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
         .select(
-          'bio, cuisine_preferences, display_name, intent, max_travel_minutes, neighbourhood, subregion'
+          'bio, cuisine_preferences, display_name, home_latitude, home_longitude, intent, max_travel_minutes, neighbourhood, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, subregion'
         )
         .eq('id', user.id)
         .maybeSingle<Profile>()
@@ -233,7 +303,18 @@ export default function DashboardPage() {
         return
       }
 
-      if (!profileData?.display_name || !profileData.subregion) {
+      if (
+        !profileData?.display_name ||
+        profileData.home_latitude === null ||
+        profileData.home_longitude === null ||
+        !profileData.subregion ||
+        !profileData.preferred_energy?.length ||
+        !profileData.preferred_scene?.length ||
+        !profileData.preferred_crowd?.length ||
+        !profileData.preferred_music?.length ||
+        !profileData.preferred_setting?.length ||
+        !profileData.preferred_price?.length
+      ) {
         router.replace('/onboarding')
         return
       }
@@ -267,16 +348,28 @@ export default function DashboardPage() {
         return
       }
 
-      const eventsResponse = await fetch('/api/events', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      })
+      const [eventsResponse, restaurantsResponse] = await Promise.all([
+        fetch('/api/events', {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }),
+        fetch('/api/restaurants', {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }),
+      ])
 
       const eventsPayload = (await eventsResponse.json()) as {
         error?: string
         events?: DashboardEvent[]
         onboardingRequired?: boolean
+      }
+      const restaurantsPayload = (await restaurantsResponse.json()) as {
+        error?: string
+        onboardingRequired?: boolean
+        restaurants?: DashboardRestaurant[]
       }
 
       if (!active) {
@@ -294,11 +387,23 @@ export default function DashboardPage() {
         return
       }
 
+      if (!restaurantsResponse.ok || restaurantsPayload.error) {
+        setSetupError(restaurantsPayload.error ?? 'Could not load restaurants.')
+        setLoading(false)
+        return
+      }
+
+      if (restaurantsPayload.onboardingRequired) {
+        router.replace('/onboarding')
+        return
+      }
+
       const nextEvents = eventsPayload.events ?? []
       setEmail(user.email ?? null)
       setProfile(profileData)
       setNotifications(notificationData ?? [])
       setEvents(nextEvents)
+      setRestaurants(restaurantsPayload.restaurants ?? [])
       seedFeedbackDrafts(nextEvents)
       setLoading(false)
     }
@@ -433,6 +538,36 @@ export default function DashboardPage() {
     seedFeedbackDrafts(nextEvents)
   }
 
+  async function refreshRestaurants() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const accessToken = session?.access_token
+
+    if (!accessToken) {
+      setSetupError('Missing active session. Log in again.')
+      return
+    }
+
+    const response = await fetch('/api/restaurants', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
+    const payload = (await response.json()) as {
+      error?: string
+      restaurants?: DashboardRestaurant[]
+    }
+
+    if (!response.ok || payload.error) {
+      setEventActionError(payload.error ?? 'Could not refresh restaurants.')
+      return
+    }
+
+    setRestaurants(payload.restaurants ?? [])
+  }
+
   async function setEventSignup(eventId: number, action: 'join' | 'leave') {
     setEventActionLoadingId(eventId)
     setEventActionError('')
@@ -506,6 +641,48 @@ export default function DashboardPage() {
 
     await refreshEvents()
     setEventActionLoadingId(null)
+  }
+
+  async function setSavedRestaurant(
+    restaurantId: number,
+    action: 'save' | 'unsave'
+  ) {
+    setRestaurantActionLoadingId(restaurantId)
+    setEventActionError('')
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+    const accessToken = session?.access_token
+
+    if (!accessToken) {
+      setEventActionError('Missing active session. Log in again.')
+      setRestaurantActionLoadingId(null)
+      return
+    }
+
+    const response = await fetch('/api/restaurants', {
+      body: JSON.stringify({
+        action,
+        restaurantId,
+      }),
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+    })
+
+    const payload = (await response.json()) as { error?: string }
+
+    if (!response.ok || payload.error) {
+      setEventActionError(payload.error ?? 'Could not update saved restaurants.')
+      setRestaurantActionLoadingId(null)
+      return
+    }
+
+    await refreshRestaurants()
+    setRestaurantActionLoadingId(null)
   }
 
   async function submitFeedback(eventId: number) {
@@ -601,6 +778,17 @@ export default function DashboardPage() {
   const visibleNotifications = showUnreadOnly
     ? notifications.filter((notification) => !notification.read_at)
     : notifications
+  const savedRestaurants = restaurants.filter((restaurant) => restaurant.isSaved)
+  const unsavedRestaurants = restaurants.filter((restaurant) => !restaurant.isSaved)
+  const leadRestaurant = unsavedRestaurants[0] ?? restaurants[0] ?? null
+  const joinedEvents = events.filter(
+    (event) => event.signupStatus === 'going' || event.signupStatus === 'waitlisted'
+  )
+  const unjoinedEvents = events.filter(
+    (event) => event.signupStatus !== 'going' && event.signupStatus !== 'waitlisted'
+  )
+  const tonightEvents = events.filter((event) => isSameCalendarDay(event.starts_at))
+  const orderedEvents = [...joinedEvents, ...unjoinedEvents]
 
   function getJoinButtonLabel(event: DashboardEvent) {
     if (eventActionLoadingId === event.id) {
@@ -628,13 +816,178 @@ export default function DashboardPage() {
         Dashboard
       </p>
       <h1 className="mt-3 text-4xl font-semibold text-zinc-950">
-        Restaurant events, not blind matching
+        Find my night
       </h1>
       <p className="mt-4 max-w-3xl text-base text-zinc-600">
         Logged in as <span className="font-medium text-zinc-950">{email}</span>.
-        You now join specific events directly. Scores are computed from your
-        profile and who else is attending.
+        Your profile now drives restaurant matching first. Events are one way to
+        act on that taste signal, not the thing we force every user to start from.
       </p>
+
+      <section className="mt-8 grid gap-4 md:grid-cols-4">
+        <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+          <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Best open match</p>
+          <p className="mt-2 text-3xl font-semibold text-zinc-950">
+            {leadRestaurant?.matchScore ?? '--'}
+          </p>
+          <p className="mt-1 text-sm text-zinc-600">
+            {leadRestaurant ? leadRestaurant.name : 'No restaurant match yet'}
+          </p>
+        </div>
+        <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+          <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Saved restaurants</p>
+          <p className="mt-2 text-3xl font-semibold text-zinc-950">{savedRestaurants.length}</p>
+          <p className="mt-1 text-sm text-zinc-600">Your curated venue list</p>
+        </div>
+        <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+          <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Tonight</p>
+          <p className="mt-2 text-3xl font-semibold text-zinc-950">{tonightEvents.length}</p>
+          <p className="mt-1 text-sm text-zinc-600">Options happening today</p>
+        </div>
+        <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+          <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Unread notices</p>
+          <p className="mt-2 text-3xl font-semibold text-zinc-950">{unreadNotificationCount}</p>
+          <p className="mt-1 text-sm text-zinc-600">Things needing attention</p>
+        </div>
+      </section>
+
+      {leadRestaurant ? (
+        <section className="mt-8 rounded-[1.75rem] border border-zinc-200 bg-zinc-950 p-6 text-white">
+          <p className="text-sm uppercase tracking-[0.2em] text-zinc-400">Top restaurant recommendation</p>
+          <div className="mt-4 flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-3xl">
+              <h2 className="text-3xl font-semibold">{leadRestaurant.name}</h2>
+              <p className="mt-3 text-base text-zinc-300">
+                {leadRestaurant.subregion}
+                {leadRestaurant.neighbourhood
+                  ? `, ${leadRestaurant.neighbourhood}`
+                  : ''}
+              </p>
+              <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-300">
+                {leadRestaurant.venueMatchSummary} Save it now, and use available events at
+                that venue when timing works instead of waiting for the perfect
+                event card to appear first.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-200">
+              <p>
+                Match score:{' '}
+                <span className="font-medium text-white">{leadRestaurant.matchScore}</span>
+              </p>
+              <p className="mt-1">
+                Available events:{' '}
+                <span className="font-medium text-white">{leadRestaurant.availableEventCount}</span>
+              </p>
+              {leadRestaurant.venueDistanceKm !== null ? (
+                <p className="mt-1">
+                  Distance:{' '}
+                  <span className="font-medium text-white">
+                    {leadRestaurant.venueDistanceKm} km
+                  </span>
+                </p>
+              ) : null}
+            </div>
+          </div>
+          {leadRestaurant.availableEvents.length > 0 ? (
+            <div className="mt-5 rounded-2xl border border-white/10 bg-white/5 p-4">
+              <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+                Available events at this venue
+              </p>
+              <div className="mt-3 space-y-2">
+                {leadRestaurant.availableEvents.map((event) => (
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 px-3 py-3"
+                    key={event.id}
+                  >
+                    <div>
+                      <p className="text-sm font-medium text-white">{event.title}</p>
+                      <p className="mt-1 text-xs text-zinc-300">
+                        {formatEventDate(event.startsAt)}
+                      </p>
+                    </div>
+                    <span className="text-xs text-zinc-300">
+                      {formatViabilityStatus(event.viabilityStatus)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              className="rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-zinc-950 transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:bg-zinc-500"
+              disabled={restaurantActionLoadingId === leadRestaurant.id}
+              onClick={() =>
+                void setSavedRestaurant(
+                  leadRestaurant.id,
+                  leadRestaurant.isSaved ? 'unsave' : 'save'
+                )
+              }
+              type="button"
+            >
+              {restaurantActionLoadingId === leadRestaurant.id
+                ? 'Updating...'
+                : leadRestaurant.isSaved
+                  ? 'Remove from saved'
+                  : 'Save restaurant'}
+            </button>
+            <Link
+              className="rounded-xl border border-white/20 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-white/10"
+              href="/onboarding"
+            >
+              Refine profile
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
+      {savedRestaurants.length > 0 ? (
+        <section className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Saved and ready</p>
+            {savedRestaurants[0] ? (
+              <>
+                <p className="mt-2 text-xl font-semibold text-zinc-950">{savedRestaurants[0].name}</p>
+                <p className="mt-1 text-sm text-zinc-600">
+                  {savedRestaurants[0].subregion}
+                  {savedRestaurants[0].neighbourhood ? `, ${savedRestaurants[0].neighbourhood}` : ''}
+                </p>
+                <p className="mt-2 text-sm text-zinc-600">
+                  Match {savedRestaurants[0].matchScore}. You already marked this venue as interesting, so future event suggestions here should be treated as higher intent.
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-zinc-600">
+                You have not saved any restaurants yet.
+              </p>
+            )}
+          </div>
+          <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Event-ready saved venues</p>
+            {savedRestaurants.find((restaurant) => restaurant.availableEventCount > 0) ? (
+              <>
+                <p className="mt-2 text-xl font-semibold text-zinc-950">
+                  {savedRestaurants.find((restaurant) => restaurant.availableEventCount > 0)?.name}
+                </p>
+                <p className="mt-1 text-sm text-zinc-600">
+                  {
+                    savedRestaurants.find((restaurant) => restaurant.availableEventCount > 0)
+                      ?.availableEventCount
+                  }{' '}
+                  available event(s)
+                </p>
+                <p className="mt-2 text-sm text-zinc-600">
+                  This is where the product should start nudging action first, because there is already supply attached to saved taste.
+                </p>
+              </>
+            ) : (
+              <p className="mt-2 text-sm text-zinc-600">
+                None of your saved restaurants have active events yet.
+              </p>
+            )}
+          </div>
+        </section>
+      ) : null}
 
       <div className="mt-8 grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
         <section className="rounded-[1.75rem] border border-zinc-200 bg-zinc-50 p-6">
@@ -651,7 +1004,7 @@ export default function DashboardPage() {
             </div>
             <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
               <p>
-                Preference:{' '}
+                Connection mode:{' '}
                 <span className="font-medium text-zinc-950">
                   {profile?.intent ? formatIntent(profile.intent) : 'Not set'}
                 </span>
@@ -664,12 +1017,48 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <p className="text-sm text-zinc-600">
+              Energy:
+              <span className="ml-1 font-medium text-zinc-950">
+                {renderTagList(profile?.preferred_energy)}
+              </span>
+            </p>
+            <p className="text-sm text-zinc-600">
+              Scene:
+              <span className="ml-1 font-medium text-zinc-950">
+                {renderTagList(profile?.preferred_scene)}
+              </span>
+            </p>
+            <p className="text-sm text-zinc-600">
+              Crowd:
+              <span className="ml-1 font-medium text-zinc-950">
+                {renderTagList(profile?.preferred_crowd)}
+              </span>
+            </p>
+            <p className="text-sm text-zinc-600">
+              Music:
+              <span className="ml-1 font-medium text-zinc-950">
+                {renderTagList(profile?.preferred_music)}
+              </span>
+            </p>
+            <p className="text-sm text-zinc-600">
+              Setting:
+              <span className="ml-1 font-medium text-zinc-950">
+                {renderTagList(profile?.preferred_setting)}
+              </span>
+            </p>
+            <p className="text-sm text-zinc-600">
+              Price:
+              <span className="ml-1 font-medium text-zinc-950">
+                {renderTagList(profile?.preferred_price)}
+              </span>
+            </p>
+          </div>
           <p className="mt-4 text-sm text-zinc-600">
-            Cuisine preferences:{' '}
-            <span className="font-medium text-zinc-950">
-              {profile?.cuisine_preferences?.length
-                ? profile.cuisine_preferences.join(', ')
-                : 'Not set yet'}
+            Cuisine preferences:
+            <span className="ml-1 font-medium text-zinc-950">
+              {renderTagList(profile?.cuisine_preferences)}
             </span>
           </p>
           {profile?.bio ? (
@@ -782,9 +1171,180 @@ export default function DashboardPage() {
 
       <section className="mt-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
-            Upcoming events
+          <div>
+            <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
+              Restaurant matches
+            </p>
+            <p className="mt-1 text-sm text-zinc-600">
+              Save venues you would actually go to. Events become suggestions layered on top of this list.
+            </p>
+          </div>
+          <p className="text-sm text-zinc-600">
+            {savedRestaurants.length} saved / {restaurants.length} matched
           </p>
+        </div>
+
+        <div className="mt-4 grid gap-4">
+          {restaurants.length > 0 ? (
+            restaurants.slice(0, 8).map((restaurant) => (
+              <article
+                className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-6"
+                key={restaurant.id}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
+                      Restaurant match {restaurant.matchScore}
+                    </p>
+                    <h2 className="mt-2 text-2xl font-semibold text-zinc-950">
+                      {restaurant.name}
+                    </h2>
+                    <p className="mt-2 text-sm text-zinc-700">
+                      {restaurant.subregion}
+                      {restaurant.neighbourhood ? `, ${restaurant.neighbourhood}` : ''}
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      Energy {restaurant.venue_energy ?? '--'} | Price {restaurant.venue_price ?? '--'}
+                    </p>
+                    {restaurant.venueDistanceKm !== null ? (
+                      <p className="mt-1 text-sm text-zinc-600">
+                        Approx {restaurant.venueDistanceKm} km from your anchor
+                      </p>
+                    ) : null}
+                    <p className="mt-1 text-sm text-zinc-600">
+                      Scene {renderTagList(restaurant.venue_scene)} | Crowd {renderTagList(restaurant.venue_crowd)}
+                    </p>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      Music {renderTagList(restaurant.venue_music)} | Setting {renderTagList(restaurant.venue_setting)}
+                    </p>
+                    {restaurant.restaurant_cuisines?.length ? (
+                      <p className="mt-1 text-sm text-zinc-600">
+                        Cuisine: {restaurant.restaurant_cuisines.join(', ')}
+                      </p>
+                    ) : null}
+                    {restaurant.googleRating !== null ? (
+                      <p className="mt-1 text-sm text-zinc-600">
+                        Google rating {restaurant.googleRating} ({restaurant.googleUserRatingsTotal ?? 0} reviews)
+                      </p>
+                    ) : null}
+                    {restaurant.formattedAddress ? (
+                      <p className="mt-1 text-sm text-zinc-600">
+                        {restaurant.formattedAddress}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
+                    <p>
+                      Saved:{' '}
+                      <span className="font-medium text-zinc-950">
+                        {restaurant.isSaved ? 'Yes' : 'No'}
+                      </span>
+                    </p>
+                    <p className="mt-1">
+                      Available events:{' '}
+                      <span className="font-medium text-zinc-950">
+                        {restaurant.availableEventCount}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-zinc-200 bg-white p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+                    Why it matches
+                  </p>
+                  <p className="mt-2 text-sm text-zinc-600">{restaurant.venueMatchSummary}</p>
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-zinc-200 bg-white p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+                    Available events here
+                  </p>
+                  {restaurant.availableEvents.length > 0 ? (
+                    <div className="mt-3 space-y-3">
+                      {restaurant.availableEvents.map((event) => (
+                        <div
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3"
+                          key={event.id}
+                        >
+                          <div>
+                            <p className="text-sm font-medium text-zinc-950">{event.title}</p>
+                            <p className="mt-1 text-xs text-zinc-600">
+                              {formatEventDate(event.startsAt)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs text-zinc-600">
+                              {formatViabilityStatus(event.viabilityStatus)}
+                            </span>
+                            <button
+                              className="rounded-xl bg-zinc-950 px-3 py-2 text-xs font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
+                              disabled={eventActionLoadingId === event.id}
+                              onClick={() => void setEventSignup(event.id, 'join')}
+                              type="button"
+                            >
+                              {eventActionLoadingId === event.id
+                                ? 'Updating...'
+                                : event.signupStatus === 'going'
+                                  ? 'Joined'
+                                  : event.signupStatus === 'waitlisted'
+                                    ? 'Waitlisted'
+                                    : 'Join event'}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-zinc-600">
+                      No active events here yet. Saving the venue is still useful because it tells the product what supply to prioritize for you.
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    className={`rounded-xl px-4 py-2.5 text-sm font-medium transition ${
+                      restaurant.isSaved
+                        ? 'border border-zinc-950 text-zinc-950 hover:bg-zinc-950 hover:text-white'
+                        : 'bg-zinc-950 text-white hover:bg-zinc-800'
+                    } disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-400 disabled:text-zinc-200`}
+                    disabled={restaurantActionLoadingId === restaurant.id}
+                    onClick={() =>
+                      void setSavedRestaurant(
+                        restaurant.id,
+                        restaurant.isSaved ? 'unsave' : 'save'
+                      )
+                    }
+                    type="button"
+                  >
+                    {restaurantActionLoadingId === restaurant.id
+                      ? 'Updating...'
+                      : restaurant.isSaved
+                        ? 'Remove from saved'
+                        : 'Save restaurant'}
+                  </button>
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-6 text-sm text-zinc-600">
+              No restaurants are available to match right now.
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
+              Match board
+            </p>
+            <p className="mt-1 text-sm text-zinc-600">
+              Current commitments are shown first, then the rest of the matches by fit.
+            </p>
+          </div>
           <div className="flex flex-wrap gap-3">
             <Link
               className="rounded-xl border border-zinc-950 px-4 py-2.5 text-sm font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white"
@@ -809,8 +1369,8 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-4 grid gap-4">
-          {events.length > 0 ? (
-            events.map((event) => {
+          {orderedEvents.length > 0 ? (
+            orderedEvents.map((event) => {
               const feedbackDraft = feedbackDrafts[event.id] ?? toFeedbackDraft(event)
 
               return (
@@ -821,7 +1381,7 @@ export default function DashboardPage() {
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-                        {formatIntent(event.intent)} event
+                        Match score {event.projectedRestaurantScore}
                       </p>
                       <h2 className="mt-2 text-2xl font-semibold text-zinc-950">
                         {event.title}
@@ -837,6 +1397,20 @@ export default function DashboardPage() {
                       </p>
                       <p className="mt-1 text-sm text-zinc-600">
                         Duration: {event.duration_minutes} minutes
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-600">
+                        Energy {event.venue_energy ?? '--'} | Price {event.venue_price ?? '--'}
+                      </p>
+                      {event.venueDistanceKm !== null ? (
+                        <p className="mt-1 text-sm text-zinc-600">
+                          Approx {event.venueDistanceKm} km from your anchor
+                        </p>
+                      ) : null}
+                      <p className="mt-1 text-sm text-zinc-600">
+                        Scene {renderTagList(event.venue_scene)} | Crowd {renderTagList(event.venue_crowd)}
+                      </p>
+                      <p className="mt-1 text-sm text-zinc-600">
+                        Music {renderTagList(event.venue_music)} | Setting {renderTagList(event.venue_setting)}
                       </p>
                       {event.restaurant_cuisines?.length ? (
                         <p className="mt-1 text-sm text-zinc-600">
@@ -881,7 +1455,7 @@ export default function DashboardPage() {
                   {event.viabilityStatus === 'at_risk' ? (
                     <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                       This event is at risk. Same-day confirmations are below the viable threshold,
-                      so don’t ignore the numbers and assume someone else will carry it.
+                      so don&apos;t ignore the numbers and assume someone else will carry it.
                     </div>
                   ) : null}
 
@@ -894,13 +1468,13 @@ export default function DashboardPage() {
                   <div className="mt-5 grid gap-3 sm:grid-cols-2">
                     <div className="rounded-2xl border border-zinc-200 bg-white p-4">
                       <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
-                        Restaurant fit
+                        Venue fit
                       </p>
                       <p className="mt-2 text-2xl font-semibold text-zinc-950">
                         {event.projectedRestaurantScore}
                       </p>
                       <p className="mt-1 text-sm text-zinc-600">
-                        Based on cuisine preferences, travel tolerance, and event location.
+                        {event.venueMatchSummary}
                       </p>
                     </div>
                     <div className="rounded-2xl border border-zinc-200 bg-white p-4">
@@ -990,7 +1564,7 @@ export default function DashboardPage() {
                       </p>
                       <p className="mt-2 text-sm text-zinc-600">
                         The event target is {event.minimumViableAttendees}. If the number
-                        stays low, you can still leave instead of sleepwalking into a
+                        stays low, you can still leave instead of drifting into a
                         weak plan.
                       </p>
                       <p className="mt-2 text-sm text-zinc-600">
@@ -1151,7 +1725,7 @@ export default function DashboardPage() {
                               },
                             }))
                           }
-                          placeholder="What worked or didn’t?"
+                          placeholder="What worked or didn't?"
                           value={feedbackDraft.notes}
                         />
                       </label>
@@ -1208,8 +1782,9 @@ export default function DashboardPage() {
             })
           ) : (
             <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-6 text-sm text-zinc-600">
-              No upcoming events yet. Admins need to create restaurant events
-              before anyone can sign up.
+              No events are available to match right now. Admins need to publish
+              tagged venue nights before the ranking model has anything useful
+              to work with.
             </div>
           )}
         </div>

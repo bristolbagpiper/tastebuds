@@ -35,6 +35,14 @@ type EventScoreRow = {
   starts_at: string
   status: 'open' | 'closed' | 'cancelled'
   title: string
+  venue_crowd: string[] | null
+  venue_energy: string | null
+  venue_latitude: number | null
+  venue_longitude: number | null
+  venue_music: string[] | null
+  venue_price: string | null
+  venue_scene: string[] | null
+  venue_setting: string[] | null
   viability_status: EventViabilityStatus
 }
 
@@ -48,9 +56,17 @@ type SignupScoreRow = {
 type ProfileRow = {
   bio: string | null
   cuisine_preferences: string[] | null
+  home_latitude: number | null
+  home_longitude: number | null
   id: string
   intent: EventIntent | null
   max_travel_minutes: number | null
+  preferred_crowd: string[] | null
+  preferred_energy: string[] | null
+  preferred_music: string[] | null
+  preferred_price: string[] | null
+  preferred_scene: string[] | null
+  preferred_setting: string[] | null
   subregion: string | null
 }
 
@@ -58,9 +74,17 @@ function toScoringProfile(profile: ProfileRow | undefined, userId: string): Prof
   return {
     bio: profile?.bio ?? null,
     cuisine_preferences: profile?.cuisine_preferences ?? [],
+    home_latitude: profile?.home_latitude ?? null,
+    home_longitude: profile?.home_longitude ?? null,
     id: userId,
     intent: profile?.intent ?? null,
     max_travel_minutes: profile?.max_travel_minutes ?? null,
+    preferred_crowd: profile?.preferred_crowd ?? [],
+    preferred_energy: profile?.preferred_energy ?? [],
+    preferred_music: profile?.preferred_music ?? [],
+    preferred_price: profile?.preferred_price ?? [],
+    preferred_scene: profile?.preferred_scene ?? [],
+    preferred_setting: profile?.preferred_setting ?? [],
     subregion: profile?.subregion ?? null,
   }
 }
@@ -69,7 +93,7 @@ async function getEventForScoring(adminClient: AdminClient, eventId: number) {
   const { data: event, error } = await adminClient
     .from('events')
     .select(
-      'capacity, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_subregion, starts_at, status, title, viability_status'
+      'capacity, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting, viability_status'
     )
     .eq('id', eventId)
     .maybeSingle<EventScoreRow>()
@@ -88,7 +112,9 @@ async function getProfiles(adminClient: AdminClient, userIds: string[]) {
 
   const { data, error } = await adminClient
     .from('profiles')
-    .select('bio, cuisine_preferences, id, intent, max_travel_minutes, subregion')
+    .select(
+      'bio, cuisine_preferences, home_latitude, home_longitude, id, intent, max_travel_minutes, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, subregion'
+    )
     .in('id', userIds)
     .returns<ProfileRow[]>()
 
@@ -137,6 +163,14 @@ export async function syncEventSignupScores(
     intent: event.intent,
     restaurant_cuisines: event.restaurant_cuisines,
     restaurant_subregion: event.restaurant_subregion,
+    venue_crowd: event.venue_crowd,
+    venue_energy: event.venue_energy,
+    venue_latitude: event.venue_latitude,
+    venue_longitude: event.venue_longitude,
+    venue_music: event.venue_music,
+    venue_price: event.venue_price,
+    venue_scene: event.venue_scene,
+    venue_setting: event.venue_setting,
   }
   const nowIso = new Date().toISOString()
 
@@ -233,9 +267,10 @@ export async function refreshUpcomingEventViability(adminClient: AdminClient) {
   const { data: events, error } = await adminClient
     .from('events')
     .select(
-      'capacity, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_subregion, starts_at, status, title, viability_status'
+      'capacity, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting, viability_status'
     )
     .neq('status', 'cancelled')
+    .is('archived_at', null)
     .gte('starts_at', new Date(now.getTime() - 12 * 60 * 60 * 1000).toISOString())
     .lte('starts_at', new Date(now.getTime() + 36 * 60 * 60 * 1000).toISOString())
     .returns<EventScoreRow[]>()
@@ -351,9 +386,10 @@ export async function queueDueEventNotifications(adminClient: AdminClient) {
   const { data: events, error } = await adminClient
     .from('events')
     .select(
-      'capacity, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_subregion, starts_at, status, title, viability_status'
+      'capacity, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting, viability_status'
     )
     .neq('status', 'cancelled')
+    .is('archived_at', null)
     .gte('starts_at', new Date(now.getTime() - 48 * 60 * 60 * 1000).toISOString())
     .lte('starts_at', new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString())
     .returns<EventScoreRow[]>()

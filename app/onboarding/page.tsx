@@ -4,7 +4,25 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 
-import { parseCuisinePreferenceInput } from '@/lib/events'
+import {
+  LocationSearchField,
+  type LocationSuggestion,
+} from '@/components/location-search-field'
+import {
+  CROWD_TAGS,
+  ENERGY_LEVELS,
+  MUSIC_TAGS,
+  PRICE_TAGS,
+  SCENE_TAGS,
+  SETTING_TAGS,
+  normalizeCrowdList,
+  normalizeEnergyList,
+  normalizeMusicList,
+  normalizePriceList,
+  normalizeSceneList,
+  normalizeSettingList,
+  parseCuisinePreferenceInput,
+} from '@/lib/events'
 import { supabase } from '@/lib/supabase/client'
 
 const SUBREGIONS = ['Uptown', 'Midtown', 'Downtown'] as const
@@ -15,10 +33,62 @@ type Profile = {
   bio: string | null
   cuisine_preferences: string[] | null
   display_name: string | null
+  home_latitude: number | null
+  home_longitude: number | null
   intent: string | null
   max_travel_minutes: number | null
   neighbourhood: string | null
+  preferred_crowd: string[] | null
+  preferred_energy: string[] | null
+  preferred_music: string[] | null
+  preferred_price: string[] | null
+  preferred_scene: string[] | null
+  preferred_setting: string[] | null
   subregion: string | null
+}
+
+function toggleValue(current: string[], value: string) {
+  return current.includes(value)
+    ? current.filter((entry) => entry !== value)
+    : [...current, value]
+}
+
+function PreferenceGroup({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string
+  onToggle: (value: string) => void
+  options: readonly string[]
+  selected: string[]
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm font-medium text-zinc-700">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => {
+          const active = selected.includes(option)
+
+          return (
+            <button
+              className={`rounded-xl px-3 py-2 text-sm font-medium transition ${
+                active
+                  ? 'bg-zinc-950 text-white'
+                  : 'border border-zinc-300 text-zinc-700 hover:border-zinc-950 hover:text-zinc-950'
+              }`}
+              key={option}
+              onClick={() => onToggle(option)}
+              type="button"
+            >
+              {option}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 export default function OnboardingPage() {
@@ -28,11 +98,20 @@ export default function OnboardingPage() {
   const [subregion, setSubregion] =
     useState<(typeof SUBREGIONS)[number]>('Midtown')
   const [neighbourhood, setNeighbourhood] = useState('')
-  const [intent, setIntent] = useState<(typeof INTENTS)[number]>('dating')
+  const [intent, setIntent] = useState<(typeof INTENTS)[number]>('friendship')
   const [maxTravelMinutes, setMaxTravelMinutes] =
     useState<(typeof TRAVEL_WINDOWS)[number]>(30)
-  const [bio, setBio] = useState('')
+  const [homeAnchorQuery, setHomeAnchorQuery] = useState('')
+  const [homeLatitude, setHomeLatitude] = useState('')
+  const [homeLongitude, setHomeLongitude] = useState('')
+  const [preferredEnergy, setPreferredEnergy] = useState<string[]>([])
+  const [preferredScene, setPreferredScene] = useState<string[]>([])
+  const [preferredCrowd, setPreferredCrowd] = useState<string[]>([])
+  const [preferredMusic, setPreferredMusic] = useState<string[]>([])
+  const [preferredSetting, setPreferredSetting] = useState<string[]>([])
+  const [preferredPrice, setPreferredPrice] = useState<string[]>([])
   const [cuisinePreferences, setCuisinePreferences] = useState('')
+  const [bio, setBio] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -59,10 +138,10 @@ export default function OnboardingPage() {
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select(
-          'bio, cuisine_preferences, display_name, intent, max_travel_minutes, neighbourhood, subregion'
+          'bio, cuisine_preferences, display_name, home_latitude, home_longitude, intent, max_travel_minutes, neighbourhood, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, subregion'
         )
         .eq('id', user.id)
-        .maybeSingle()
+        .maybeSingle<Profile>()
 
       if (!active) {
         return
@@ -70,42 +149,55 @@ export default function OnboardingPage() {
 
       if (profileError) {
         setError(
-          'The profiles table is missing. Run supabase/schema.sql in the Supabase SQL editor first.'
+          'The profiles table is missing matching columns. Run the latest Supabase migration first.'
         )
         setLoading(false)
         return
       }
 
       if (profile) {
-        hydrateForm(profile)
+        setDisplayName(profile.display_name ?? '')
+        setSubregion(
+          profile.subregion && SUBREGIONS.includes(profile.subregion as (typeof SUBREGIONS)[number])
+            ? (profile.subregion as (typeof SUBREGIONS)[number])
+            : 'Midtown'
+        )
+        setNeighbourhood(profile.neighbourhood ?? '')
+        setHomeAnchorQuery(profile.neighbourhood ?? '')
+        setIntent(
+          profile.intent && INTENTS.includes(profile.intent as (typeof INTENTS)[number])
+            ? (profile.intent as (typeof INTENTS)[number])
+            : 'friendship'
+        )
+        setHomeLatitude(
+          profile.home_latitude === null || profile.home_latitude === undefined
+            ? ''
+            : String(profile.home_latitude)
+        )
+        setHomeLongitude(
+          profile.home_longitude === null || profile.home_longitude === undefined
+            ? ''
+            : String(profile.home_longitude)
+        )
+        setMaxTravelMinutes(
+          profile.max_travel_minutes &&
+            TRAVEL_WINDOWS.includes(
+              profile.max_travel_minutes as (typeof TRAVEL_WINDOWS)[number]
+            )
+            ? (profile.max_travel_minutes as (typeof TRAVEL_WINDOWS)[number])
+            : 30
+        )
+        setPreferredEnergy(normalizeEnergyList(profile.preferred_energy))
+        setPreferredScene(normalizeSceneList(profile.preferred_scene))
+        setPreferredCrowd(normalizeCrowdList(profile.preferred_crowd))
+        setPreferredMusic(normalizeMusicList(profile.preferred_music))
+        setPreferredSetting(normalizeSettingList(profile.preferred_setting))
+        setPreferredPrice(normalizePriceList(profile.preferred_price))
+        setCuisinePreferences((profile.cuisine_preferences ?? []).join(', '))
+        setBio(profile.bio ?? '')
       }
 
       setLoading(false)
-    }
-
-    function hydrateForm(profile: Profile) {
-      setDisplayName(profile.display_name ?? '')
-      setSubregion(
-        profile.subregion && SUBREGIONS.includes(profile.subregion as (typeof SUBREGIONS)[number])
-          ? (profile.subregion as (typeof SUBREGIONS)[number])
-          : 'Midtown'
-      )
-      setNeighbourhood(profile.neighbourhood ?? '')
-      setIntent(
-        profile.intent && INTENTS.includes(profile.intent as (typeof INTENTS)[number])
-          ? (profile.intent as (typeof INTENTS)[number])
-          : 'dating'
-      )
-      setMaxTravelMinutes(
-        profile.max_travel_minutes &&
-          TRAVEL_WINDOWS.includes(
-            profile.max_travel_minutes as (typeof TRAVEL_WINDOWS)[number]
-          )
-          ? (profile.max_travel_minutes as (typeof TRAVEL_WINDOWS)[number])
-          : 30
-      )
-      setBio(profile.bio ?? '')
-      setCuisinePreferences((profile.cuisine_preferences ?? []).join(', '))
     }
 
     void loadProfile()
@@ -115,11 +207,46 @@ export default function OnboardingPage() {
     }
   }, [router])
 
+  function applyHomeAnchorSuggestion(suggestion: LocationSuggestion) {
+    setHomeAnchorQuery(suggestion.label)
+    setHomeLatitude(String(suggestion.latitude))
+    setHomeLongitude(String(suggestion.longitude))
+    setNeighbourhood(suggestion.neighbourhood ?? '')
+    setSubregion(suggestion.subregion)
+  }
+
   async function handleSave(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     if (!userId) {
       setError('You need to be logged in before saving a profile.')
+      return
+    }
+
+    if (
+      preferredEnergy.length === 0 ||
+      preferredScene.length === 0 ||
+      preferredCrowd.length === 0 ||
+      preferredMusic.length === 0 ||
+      preferredSetting.length === 0 ||
+      preferredPrice.length === 0
+    ) {
+      setError('Complete the night-preference sections before continuing.')
+      return
+    }
+
+    const parsedHomeLatitude = Number(homeLatitude)
+    const parsedHomeLongitude = Number(homeLongitude)
+
+    if (
+      !Number.isFinite(parsedHomeLatitude) ||
+      parsedHomeLatitude < -90 ||
+      parsedHomeLatitude > 90 ||
+      !Number.isFinite(parsedHomeLongitude) ||
+      parsedHomeLongitude < -180 ||
+      parsedHomeLongitude > 180
+    ) {
+      setError('Enter a valid home latitude and longitude for proximity scoring.')
       return
     }
 
@@ -130,14 +257,22 @@ export default function OnboardingPage() {
       id: userId,
       bio: bio.trim() || null,
       city: 'New York City',
-        display_name: displayName.trim(),
-        intent,
-        max_travel_minutes: maxTravelMinutes,
-        neighbourhood: neighbourhood.trim() || null,
-        region: 'Manhattan',
-        cuisine_preferences: parseCuisinePreferenceInput(cuisinePreferences),
-        subregion,
-      })
+      cuisine_preferences: parseCuisinePreferenceInput(cuisinePreferences),
+      display_name: displayName.trim(),
+      home_latitude: parsedHomeLatitude,
+      home_longitude: parsedHomeLongitude,
+      intent,
+      max_travel_minutes: maxTravelMinutes,
+      neighbourhood: neighbourhood.trim() || null,
+      preferred_crowd: preferredCrowd,
+      preferred_energy: preferredEnergy,
+      preferred_music: preferredMusic,
+      preferred_price: preferredPrice,
+      preferred_scene: preferredScene,
+      preferred_setting: preferredSetting,
+      region: 'Manhattan',
+      subregion,
+    })
 
     setSaving(false)
 
@@ -158,30 +293,31 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-3xl px-8 py-16">
-      <div className="max-w-2xl">
+    <main className="mx-auto min-h-screen w-full max-w-4xl px-8 py-16">
+      <div className="max-w-3xl">
         <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">
-          Onboarding
+          Find My Night
         </p>
         <h1 className="mt-3 text-4xl font-semibold text-zinc-950">
-          Set up your Manhattan profile
+          Build the profile that drives your venue matches
         </h1>
         <p className="mt-4 text-base text-zinc-600">
-          Keep this lean. The point is to capture useful event preferences, not
-          invent personality theatre before the basics exist.
+          The old profile was too vague. This one captures the actual night you
+          want so the app can rank venues with something more defensible than a
+          random list.
         </p>
       </div>
 
-      <form onSubmit={handleSave} className="mt-10 space-y-8">
+      <form className="mt-10 space-y-8" onSubmit={handleSave}>
         <div className="grid gap-5 sm:grid-cols-2">
           <label className="block space-y-2">
             <span className="text-sm font-medium text-zinc-700">Display name</span>
             <input
               className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
-              value={displayName}
               onChange={(event) => setDisplayName(event.target.value)}
               placeholder="Alex"
               required
+              value={displayName}
             />
           </label>
 
@@ -189,10 +325,10 @@ export default function OnboardingPage() {
             <span className="text-sm font-medium text-zinc-700">Subregion</span>
             <select
               className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
-              value={subregion}
               onChange={(event) =>
                 setSubregion(event.target.value as (typeof SUBREGIONS)[number])
               }
+              value={subregion}
             >
               {SUBREGIONS.map((option) => (
                 <option key={option} value={option}>
@@ -203,44 +339,77 @@ export default function OnboardingPage() {
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-zinc-700">
-              Neighbourhood
-            </span>
+            <span className="text-sm font-medium text-zinc-700">Neighbourhood</span>
             <input
               className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
-              value={neighbourhood}
               onChange={(event) => setNeighbourhood(event.target.value)}
               placeholder="Lower East Side"
+              value={neighbourhood}
             />
           </label>
 
           <label className="block space-y-2">
-            <span className="text-sm font-medium text-zinc-700">Intent</span>
+            <span className="text-sm font-medium text-zinc-700">Connection mode</span>
             <select
               className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
-              value={intent}
               onChange={(event) =>
                 setIntent(event.target.value as (typeof INTENTS)[number])
               }
+              value={intent}
             >
               {INTENTS.map((option) => (
                 <option key={option} value={option}>
-                  {option[0].toUpperCase() + option.slice(1)} preference
+                  {option[0].toUpperCase() + option.slice(1)}
                 </option>
               ))}
             </select>
           </label>
 
+          <LocationSearchField
+            description="Search a Manhattan address or neighborhood. Selecting a result fills your anchor coordinates and nearby area."
+            label="Home anchor search"
+            onPick={applyHomeAnchorSuggestion}
+            placeholder="77 Bedford St, West Village"
+            query={homeAnchorQuery}
+            setQuery={setHomeAnchorQuery}
+          />
+
+          <label className="block space-y-2">
+            <span className="text-sm font-medium text-zinc-700">Home latitude</span>
+            <input
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(event) => setHomeLatitude(event.target.value)}
+              placeholder="40.7306"
+              required
+              step="any"
+              type="number"
+              value={homeLatitude}
+            />
+          </label>
+
+          <label className="block space-y-2">
+            <span className="text-sm font-medium text-zinc-700">Home longitude</span>
+            <input
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(event) => setHomeLongitude(event.target.value)}
+              placeholder="-73.9866"
+              required
+              step="any"
+              type="number"
+              value={homeLongitude}
+            />
+          </label>
+
           <label className="block space-y-2 sm:col-span-2">
-            <span className="text-sm font-medium text-zinc-700">
-              Max travel time
-            </span>
+            <span className="text-sm font-medium text-zinc-700">Max travel time</span>
             <select
               className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
-              value={maxTravelMinutes}
               onChange={(event) =>
-                setMaxTravelMinutes(Number(event.target.value) as (typeof TRAVEL_WINDOWS)[number])
+                setMaxTravelMinutes(
+                  Number(event.target.value) as (typeof TRAVEL_WINDOWS)[number]
+                )
               }
+              value={maxTravelMinutes}
             >
               {TRAVEL_WINDOWS.map((minutes) => (
                 <option key={minutes} value={minutes}>
@@ -251,42 +420,92 @@ export default function OnboardingPage() {
           </label>
         </div>
 
+        <section className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-6">
+          <h2 className="text-lg font-semibold text-zinc-950">Night preferences</h2>
+          <p className="mt-2 text-sm text-zinc-600">
+            Pick the kinds of venues you actually want matched with. Broad picks
+            are fine, but leaving sections blank just weakens the model.
+          </p>
+          <div className="mt-6 grid gap-6">
+            <PreferenceGroup
+              label="Energy"
+              onToggle={(value) => setPreferredEnergy((current) => toggleValue(current, value))}
+              options={ENERGY_LEVELS}
+              selected={preferredEnergy}
+            />
+            <PreferenceGroup
+              label="Scene"
+              onToggle={(value) => setPreferredScene((current) => toggleValue(current, value))}
+              options={SCENE_TAGS}
+              selected={preferredScene}
+            />
+            <PreferenceGroup
+              label="Crowd"
+              onToggle={(value) => setPreferredCrowd((current) => toggleValue(current, value))}
+              options={CROWD_TAGS}
+              selected={preferredCrowd}
+            />
+            <PreferenceGroup
+              label="Music"
+              onToggle={(value) => setPreferredMusic((current) => toggleValue(current, value))}
+              options={MUSIC_TAGS}
+              selected={preferredMusic}
+            />
+            <PreferenceGroup
+              label="Setting"
+              onToggle={(value) => setPreferredSetting((current) => toggleValue(current, value))}
+              options={SETTING_TAGS}
+              selected={preferredSetting}
+            />
+            <PreferenceGroup
+              label="Price"
+              onToggle={(value) => setPreferredPrice((current) => toggleValue(current, value))}
+              options={PRICE_TAGS}
+              selected={preferredPrice}
+            />
+          </div>
+        </section>
+
         <label className="block space-y-2">
-          <span className="text-sm font-medium text-zinc-700">
-            Cuisine preferences
-          </span>
+          <span className="text-sm font-medium text-zinc-700">Cuisine preferences</span>
           <input
             className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
-            value={cuisinePreferences}
             onChange={(event) => setCuisinePreferences(event.target.value)}
             placeholder="Italian, Japanese, Thai"
+            value={cuisinePreferences}
           />
           <span className="text-xs text-zinc-500">
-            Comma-separated. Used for restaurant and attendee fit scoring.
+            Optional, comma-separated. Used as a secondary tie-breaker after the
+            weighted venue model.
           </span>
         </label>
+
+        <p className="text-xs text-zinc-500">
+          Use a rough home anchor, not your exact front door. Search is faster,
+          but the coordinates remain editable because geocoders are not magic.
+        </p>
 
         <label className="block space-y-2">
           <span className="text-sm font-medium text-zinc-700">Short bio</span>
           <textarea
-            className="min-h-36 w-full rounded-[1.25rem] border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
-            value={bio}
+            className="min-h-32 w-full rounded-[1.25rem] border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
             onChange={(event) => setBio(event.target.value)}
-            placeholder="A few lines on how you like to spend a Wednesday evening."
+            placeholder="What makes a good night out for you?"
+            value={bio}
           />
         </label>
 
-        {error && (
+        {error ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {error}
           </div>
-        )}
+        ) : null}
 
         <div className="flex flex-wrap gap-3">
           <button
             className="rounded-xl bg-zinc-950 px-5 py-3 font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400"
-            type="submit"
             disabled={saving}
+            type="submit"
           >
             {saving ? 'Saving profile...' : 'Save profile'}
           </button>

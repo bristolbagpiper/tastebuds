@@ -5,10 +5,15 @@ import {
   syncEventSignupScores,
 } from '@/lib/event-operations'
 import {
-  MANHATTAN_SUBREGIONS,
   type EventIntent,
   type ManhattanSubregion,
+  normalizeCrowdList,
   normalizeCuisineList,
+  normalizeMusicList,
+  normalizeSceneList,
+  normalizeSettingList,
+  normalizeVenueEnergy,
+  normalizeVenuePrice,
 } from '@/lib/events'
 import { queueNotifications } from '@/lib/notifications'
 import { requireAdminOrCron } from '@/lib/request-auth'
@@ -20,20 +25,19 @@ type CreateEventRequest = {
   durationMinutes?: number
   intent?: EventIntent
   minimumViableAttendees?: number
-  restaurantCuisines?: string[]
-  restaurantName?: string
-  restaurantNeighbourhood?: string
-  restaurantSubregion?: string
+  restaurantId?: number
   startsAt?: string
   title?: string
 }
 
 type UpdateEventAction =
+  | 'archive'
   | 'cancel'
   | 'cancel-low-confirmation'
   | 'close'
   | 'force-proceed'
   | 'reopen'
+  | 'unarchive'
   | 'update'
 
 type UpdateEventRequest = {
@@ -44,16 +48,14 @@ type UpdateEventRequest = {
   eventId?: number
   intent?: EventIntent
   minimumViableAttendees?: number
-  restaurantCuisines?: string[]
-  restaurantName?: string
-  restaurantNeighbourhood?: string
-  restaurantSubregion?: string
+  restaurantId?: number
   startsAt?: string
   status?: 'cancelled' | 'closed' | 'open'
   title?: string
 }
 
 type EventSummary = {
+  archived_at: string | null
   attendeeCount: number
   attendees: EventAttendee[]
   attendedCount: number
@@ -70,6 +72,7 @@ type EventSummary = {
   intent: EventIntent
   minimum_viable_attendees: number
   noShowCount: number
+  restaurant_id: number | null
   restaurant_cuisines: string[]
   restaurant_name: string
   restaurant_neighbourhood: string | null
@@ -77,6 +80,14 @@ type EventSummary = {
   starts_at: string
   status: 'open' | 'closed' | 'cancelled'
   title: string
+  venue_crowd: string[]
+  venue_energy: string | null
+  venue_latitude: number | null
+  venue_longitude: number | null
+  venue_music: string[]
+  venue_price: string | null
+  venue_scene: string[]
+  venue_setting: string[]
   viability_status: 'healthy' | 'at_risk' | 'forced_go' | 'cancelled_low_confirmations'
   waitlistCount: number
   would_join_again_count: number
@@ -116,20 +127,67 @@ type AdminAnalyticsSummary = {
   totalWaitlisted: number
 }
 
-const EVENT_SUMMARY_SELECT =
-  'capacity, created_at, description, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, viability_status'
-
-function isValidSubregion(value: string) {
-  return MANHATTAN_SUBREGIONS.includes(value as ManhattanSubregion)
+type RestaurantSnapshot = {
+  archived_at: string | null
+  cuisines: string[] | null
+  id: number
+  name: string
+  neighbourhood: string | null
+  subregion: ManhattanSubregion
+  venue_crowd: string[] | null
+  venue_energy: string | null
+  venue_latitude: number | null
+  venue_longitude: number | null
+  venue_music: string[] | null
+  venue_price: string | null
+  venue_scene: string[] | null
+  venue_setting: string[] | null
 }
 
-async function fetchEvents() {
+const EVENT_SUMMARY_SELECT =
+  'archived_at, capacity, created_at, description, duration_minutes, id, intent, minimum_viable_attendees, restaurant_id, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting, viability_status'
+
+function hasEventEnded(startsAt: string, durationMinutes: number) {
+  return new Date(startsAt).getTime() + durationMinutes * 60 * 1000 <= Date.now()
+}
+
+async function getRestaurantSnapshot(
+  restaurantId: number
+): Promise<RestaurantSnapshot> {
   const adminClient = createServerSupabaseAdminClient()
-  const { data: events, error } = await adminClient
+  const { data: restaurant, error } = await adminClient
+    .from('restaurants')
+    .select(
+      'archived_at, cuisines, id, name, neighbourhood, subregion, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting'
+    )
+    .eq('id', restaurantId)
+    .maybeSingle<RestaurantSnapshot>()
+
+  if (error || !restaurant) {
+    throw new Error(error?.message ?? 'Restaurant not found.')
+  }
+
+  if (restaurant.archived_at) {
+    throw new Error('Archived restaurants cannot be scheduled.')
+  }
+
+  return restaurant
+}
+
+async function fetchEvents(includeArchived: boolean) {
+  const adminClient = createServerSupabaseAdminClient()
+
+  let eventsQuery = adminClient
     .from('events')
     .select(EVENT_SUMMARY_SELECT)
     .order('starts_at', { ascending: true })
     .limit(60)
+
+  if (!includeArchived) {
+    eventsQuery = eventsQuery.is('archived_at', null)
+  }
+
+  const { data: events, error } = await eventsQuery
     .returns<
       Omit<
         EventSummary,
@@ -486,7 +544,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const { events, summary } = await fetchEvents()
+    const includeArchived = new URL(request.url).searchParams.get('includeArchived') === 'true'
+    const { events, summary } = await fetchEvents(includeArchived)
 
     return NextResponse.json({
       events,
@@ -523,30 +582,18 @@ export async function POST(request: Request) {
   }
 
   const title = body.title?.trim()
-  const restaurantName = body.restaurantName?.trim()
-  const restaurantSubregion = body.restaurantSubregion?.trim() ?? ''
-  const restaurantNeighbourhood = body.restaurantNeighbourhood?.trim() ?? ''
+  const restaurantId = Number(body.restaurantId)
   const intent = body.intent
   const startsAt = body.startsAt
   const description = body.description?.trim() ?? ''
   const capacity = Number(body.capacity ?? 0)
   const durationMinutes = Number(body.durationMinutes ?? 120)
   const minimumViableAttendees = Number(body.minimumViableAttendees ?? 2)
-  const cuisines = normalizeCuisineList(body.restaurantCuisines ?? [])
 
-  if (!title || !restaurantName || !intent || !startsAt) {
+  if (!title || !intent || !startsAt || !Number.isInteger(restaurantId) || restaurantId <= 0) {
     return NextResponse.json(
       {
-        error: 'title, intent, startsAt, and restaurantName are required.',
-      },
-      { status: 400 }
-    )
-  }
-
-  if (!isValidSubregion(restaurantSubregion)) {
-    return NextResponse.json(
-      {
-        error: 'restaurantSubregion must be Uptown, Midtown, or Downtown.',
+        error: 'title, intent, startsAt, and restaurantId are required.',
       },
       { status: 400 }
     )
@@ -595,6 +642,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    const restaurant = await getRestaurantSnapshot(restaurantId)
     const adminClient = createServerSupabaseAdminClient()
     const { data: insertedEvent, error } = await adminClient
       .from('events')
@@ -605,12 +653,21 @@ export async function POST(request: Request) {
         duration_minutes: durationMinutes,
         intent,
         minimum_viable_attendees: minimumViableAttendees,
-        restaurant_cuisines: cuisines,
-        restaurant_name: restaurantName,
-        restaurant_neighbourhood: restaurantNeighbourhood || null,
-        restaurant_subregion: restaurantSubregion,
+        restaurant_cuisines: normalizeCuisineList(restaurant.cuisines),
+        restaurant_id: restaurant.id,
+        restaurant_name: restaurant.name,
+        restaurant_neighbourhood: restaurant.neighbourhood,
+        restaurant_subregion: restaurant.subregion,
         starts_at: startsAtDate.toISOString(),
         title,
+        venue_crowd: normalizeCrowdList(restaurant.venue_crowd),
+        venue_energy: normalizeVenueEnergy(restaurant.venue_energy),
+        venue_latitude: restaurant.venue_latitude,
+        venue_longitude: restaurant.venue_longitude,
+        venue_music: normalizeMusicList(restaurant.venue_music),
+        venue_price: normalizeVenuePrice(restaurant.venue_price),
+        venue_scene: normalizeSceneList(restaurant.venue_scene),
+        venue_setting: normalizeSettingList(restaurant.venue_setting),
         viability_status: 'healthy',
       })
       .select(EVENT_SUMMARY_SELECT)
@@ -643,6 +700,7 @@ export async function POST(request: Request) {
         attendedCount: 0,
         average_group_rating: null,
         average_venue_rating: null,
+        archived_at: null,
         confirmedTodayCount: 0,
         dropoffCount: 0,
         feedback_count: 0,
@@ -698,16 +756,21 @@ export async function PATCH(request: Request) {
   const { data: currentEvent, error: currentEventError } = await adminClient
     .from('events')
     .select(
-      'capacity, minimum_viable_attendees, restaurant_name, starts_at, status, title, viability_status'
+      'archived_at, capacity, duration_minutes, minimum_viable_attendees, restaurant_name, starts_at, status, title, venue_latitude, venue_longitude, viability_status'
+      
     )
     .eq('id', eventId)
     .maybeSingle<{
+      archived_at: string | null
       capacity: number
+      duration_minutes: number
       minimum_viable_attendees: number
       restaurant_name: string
       starts_at: string
       status: 'open' | 'closed' | 'cancelled'
       title: string
+      venue_latitude: number | null
+      venue_longitude: number | null
       viability_status: EventSummary['viability_status']
     }>()
 
@@ -721,6 +784,16 @@ export async function PATCH(request: Request) {
 
   if (action === 'close') {
     updates.status = 'closed'
+  } else if (action === 'archive') {
+    if (!hasEventEnded(currentEvent.starts_at, currentEvent.duration_minutes)) {
+      return NextResponse.json(
+        { error: 'Only past events can be archived.' },
+        { status: 400 }
+      )
+    }
+    updates.archived_at = currentEvent.archived_at ?? new Date().toISOString()
+  } else if (action === 'unarchive') {
+    updates.archived_at = null
   } else if (action === 'cancel') {
     updates.status = 'cancelled'
     updates.viability_status = 'healthy'
@@ -743,33 +816,6 @@ export async function PATCH(request: Request) {
     updates.title = nextTitle
   }
 
-  if (typeof body.restaurantName === 'string') {
-    const nextRestaurantName = body.restaurantName.trim()
-    if (!nextRestaurantName) {
-      return NextResponse.json(
-        { error: 'restaurantName cannot be empty.' },
-        { status: 400 }
-      )
-    }
-    updates.restaurant_name = nextRestaurantName
-  }
-
-  if (typeof body.restaurantNeighbourhood === 'string') {
-    const nextNeighbourhood = body.restaurantNeighbourhood.trim()
-    updates.restaurant_neighbourhood = nextNeighbourhood || null
-  }
-
-  if (typeof body.restaurantSubregion === 'string') {
-    const nextSubregion = body.restaurantSubregion.trim()
-    if (!isValidSubregion(nextSubregion)) {
-      return NextResponse.json(
-        { error: 'restaurantSubregion must be Uptown, Midtown, or Downtown.' },
-        { status: 400 }
-      )
-    }
-    updates.restaurant_subregion = nextSubregion
-  }
-
   if (body.intent) {
     if (body.intent !== 'dating' && body.intent !== 'friendship') {
       return NextResponse.json(
@@ -785,8 +831,28 @@ export async function PATCH(request: Request) {
     updates.description = nextDescription || null
   }
 
-  if (Array.isArray(body.restaurantCuisines)) {
-    updates.restaurant_cuisines = normalizeCuisineList(body.restaurantCuisines)
+  if (typeof body.restaurantId === 'number') {
+    if (!Number.isInteger(body.restaurantId) || body.restaurantId <= 0) {
+      return NextResponse.json(
+        { error: 'restaurantId must be a valid positive integer.' },
+        { status: 400 }
+      )
+    }
+
+    const restaurant = await getRestaurantSnapshot(body.restaurantId)
+    updates.restaurant_id = restaurant.id
+    updates.restaurant_cuisines = normalizeCuisineList(restaurant.cuisines)
+    updates.restaurant_name = restaurant.name
+    updates.restaurant_neighbourhood = restaurant.neighbourhood
+    updates.restaurant_subregion = restaurant.subregion
+    updates.venue_crowd = normalizeCrowdList(restaurant.venue_crowd)
+    updates.venue_energy = normalizeVenueEnergy(restaurant.venue_energy)
+    updates.venue_latitude = restaurant.venue_latitude
+    updates.venue_longitude = restaurant.venue_longitude
+    updates.venue_music = normalizeMusicList(restaurant.venue_music)
+    updates.venue_price = normalizeVenuePrice(restaurant.venue_price)
+    updates.venue_scene = normalizeSceneList(restaurant.venue_scene)
+    updates.venue_setting = normalizeSettingList(restaurant.venue_setting)
   }
 
   if (body.startsAt) {
@@ -913,9 +979,18 @@ export async function PATCH(request: Request) {
 
     const shouldRecomputeScores =
       'intent' in updates ||
+      'restaurant_id' in updates ||
       'restaurant_subregion' in updates ||
       'duration_minutes' in updates ||
-      'restaurant_cuisines' in updates
+      'restaurant_cuisines' in updates ||
+      'venue_crowd' in updates ||
+      'venue_energy' in updates ||
+      'venue_latitude' in updates ||
+      'venue_longitude' in updates ||
+      'venue_music' in updates ||
+      'venue_price' in updates ||
+      'venue_scene' in updates ||
+      'venue_setting' in updates
 
     if (shouldRecomputeScores && updatedEvent.status !== 'cancelled') {
       await syncEventSignupScores(adminClient, updatedEvent.id)
@@ -925,20 +1000,22 @@ export async function PATCH(request: Request) {
       await refreshEventViability(adminClient, updatedEvent.id)
     }
 
-    await notifyAttendeesForUpdate(action, {
-      ...updatedEvent,
-      attendeeCount: 0,
-      attendees: [],
-      attendedCount: 0,
-      average_group_rating: null,
-      average_venue_rating: null,
-      confirmedTodayCount: 0,
-      dropoffCount: 0,
-      feedback_count: 0,
-      noShowCount: 0,
-      waitlistCount: 0,
-      would_join_again_count: 0,
-    })
+    if (action !== 'archive' && action !== 'unarchive') {
+      await notifyAttendeesForUpdate(action, {
+        ...updatedEvent,
+        attendeeCount: 0,
+        attendees: [],
+        attendedCount: 0,
+        average_group_rating: null,
+        average_venue_rating: null,
+        confirmedTodayCount: 0,
+        dropoffCount: 0,
+        feedback_count: 0,
+        noShowCount: 0,
+        waitlistCount: 0,
+        would_join_again_count: 0,
+      })
+    }
 
     return NextResponse.json({
       event: {
@@ -965,4 +1042,68 @@ export async function PATCH(request: Request) {
       { status: 500 }
     )
   }
+}
+
+export async function DELETE(request: Request) {
+  const adminCheck = await requireAdminOrCron(request, {
+    allowAdmin: true,
+    allowCron: false,
+  })
+
+  if ('error' in adminCheck) {
+    return adminCheck.error
+  }
+
+  let body: { eventId?: number } = {}
+
+  try {
+    body = (await request.json()) as { eventId?: number }
+  } catch {
+    body = {}
+  }
+
+  const eventId = Number(body.eventId)
+
+  if (!Number.isInteger(eventId) || eventId <= 0) {
+    return NextResponse.json(
+      {
+        error: 'eventId must be a valid positive integer.',
+      },
+      { status: 400 }
+    )
+  }
+
+  const adminClient = createServerSupabaseAdminClient()
+
+  const { data: currentEvent, error: currentEventError } = await adminClient
+    .from('events')
+    .select('duration_minutes, starts_at')
+    .eq('id', eventId)
+    .maybeSingle<{
+      duration_minutes: number
+      starts_at: string
+    }>()
+
+  if (currentEventError) {
+    return NextResponse.json({ error: currentEventError.message }, { status: 500 })
+  }
+
+  if (!currentEvent) {
+    return NextResponse.json({ error: 'Event not found.' }, { status: 404 })
+  }
+
+  if (!hasEventEnded(currentEvent.starts_at, currentEvent.duration_minutes)) {
+    return NextResponse.json(
+      { error: 'Only past events can be deleted.' },
+      { status: 400 }
+    )
+  }
+
+  const { error } = await adminClient.from('events').delete().eq('id', eventId)
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ ok: true })
 }

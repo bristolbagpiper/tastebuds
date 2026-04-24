@@ -256,6 +256,116 @@ using (auth.uid() = user_id);
 alter table public.profiles
 add column if not exists cuisine_preferences text[] not null default '{}';
 
+alter table public.profiles
+add column if not exists preferred_energy text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists preferred_scene text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists preferred_crowd text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists preferred_music text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists preferred_setting text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists preferred_price text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists home_latitude double precision;
+
+alter table public.profiles
+add column if not exists home_longitude double precision;
+
+create table if not exists public.restaurants (
+  id bigint generated always as identity primary key,
+  name text not null,
+  subregion text not null check (subregion in ('Uptown', 'Midtown', 'Downtown')),
+  neighbourhood text,
+  cuisines text[] not null default '{}',
+  google_place_id text,
+  google_maps_uri text,
+  formatted_address text,
+  google_rating numeric(3,2),
+  google_user_ratings_total integer,
+  google_price_level text,
+  google_editorial_summary text,
+  google_phone_number text,
+  google_website_uri text,
+  venue_latitude double precision,
+  venue_longitude double precision,
+  venue_energy text check (venue_energy in ('Chill', 'Moderate', 'High')),
+  venue_scene text[] not null default '{}',
+  venue_crowd text[] not null default '{}',
+  venue_music text[] not null default '{}',
+  venue_setting text[] not null default '{}',
+  venue_price text check (venue_price in ('$', '$$', '$$$', '$$$$')),
+  created_by uuid references auth.users(id) on delete set null,
+  archived_at timestamptz,
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create index if not exists restaurants_name_idx
+on public.restaurants (name asc);
+
+create index if not exists restaurants_unarchived_name_idx
+on public.restaurants (name asc)
+where archived_at is null;
+
+create unique index if not exists restaurants_google_place_id_idx
+on public.restaurants (google_place_id)
+where google_place_id is not null;
+
+alter table public.restaurants enable row level security;
+
+grant select on public.restaurants to authenticated;
+
+drop policy if exists "Authenticated users can view restaurants" on public.restaurants;
+create policy "Authenticated users can view restaurants"
+on public.restaurants
+for select
+to authenticated
+using (true);
+
+create table if not exists public.saved_restaurants (
+  id bigint generated always as identity primary key,
+  restaurant_id bigint not null references public.restaurants(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default timezone('utc', now()),
+  unique (restaurant_id, user_id)
+);
+
+create index if not exists saved_restaurants_user_created_idx
+on public.saved_restaurants (user_id, created_at desc);
+
+create index if not exists saved_restaurants_restaurant_idx
+on public.saved_restaurants (restaurant_id);
+
+alter table public.saved_restaurants enable row level security;
+
+grant select, insert, delete on public.saved_restaurants to authenticated;
+
+drop policy if exists "Users can view their own saved restaurants" on public.saved_restaurants;
+create policy "Users can view their own saved restaurants"
+on public.saved_restaurants
+for select
+using (auth.uid() = user_id);
+
+drop policy if exists "Users can insert their own saved restaurants" on public.saved_restaurants;
+create policy "Users can insert their own saved restaurants"
+on public.saved_restaurants
+for insert
+with check (auth.uid() = user_id);
+
+drop policy if exists "Users can delete their own saved restaurants" on public.saved_restaurants;
+create policy "Users can delete their own saved restaurants"
+on public.saved_restaurants
+for delete
+using (auth.uid() = user_id);
+
 create table if not exists public.events (
   id bigint generated always as identity primary key,
   title text not null,
@@ -268,16 +378,33 @@ create table if not exists public.events (
   restaurant_subregion text not null check (restaurant_subregion in ('Uptown', 'Midtown', 'Downtown')),
   restaurant_neighbourhood text,
   restaurant_cuisines text[] not null default '{}',
+  venue_latitude double precision,
+  venue_longitude double precision,
+  venue_energy text check (venue_energy in ('Chill', 'Moderate', 'High')),
+  venue_scene text[] not null default '{}',
+  venue_crowd text[] not null default '{}',
+  venue_music text[] not null default '{}',
+  venue_setting text[] not null default '{}',
+  venue_price text check (venue_price in ('$', '$$', '$$$', '$$$$')),
   capacity integer not null default 12 check (capacity > 0 and capacity <= 200),
   description text,
   status text not null default 'open' check (status in ('open', 'closed', 'cancelled')),
+  restaurant_id bigint references public.restaurants(id),
   created_by uuid references auth.users(id) on delete set null,
+  archived_at timestamptz,
   created_at timestamptz not null default timezone('utc', now())
 );
 
 create index if not exists events_upcoming_idx
 on public.events (starts_at asc)
 where status = 'open';
+
+create index if not exists events_unarchived_starts_at_idx
+on public.events (starts_at asc)
+where archived_at is null;
+
+create index if not exists events_restaurant_id_idx
+on public.events (restaurant_id);
 
 alter table public.events enable row level security;
 

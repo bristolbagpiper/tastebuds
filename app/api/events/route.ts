@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 
 import {
+  calculateDistanceKm,
+  describeVenueMatch,
   calculateRestaurantMatchScore,
   type EventForScoring,
   type ProfileForScoring,
@@ -25,6 +27,14 @@ type EventRow = {
   starts_at: string
   status: 'open' | 'closed' | 'cancelled'
   title: string
+  venue_crowd: string[] | null
+  venue_energy: string | null
+  venue_latitude: number | null
+  venue_longitude: number | null
+  venue_music: string[] | null
+  venue_price: string | null
+  venue_scene: string[] | null
+  venue_setting: string[] | null
   viability_status: 'healthy' | 'at_risk' | 'forced_go' | 'cancelled_low_confirmations'
 }
 
@@ -43,10 +53,18 @@ type ProfileRow = {
   bio: string | null
   cuisine_preferences: string[] | null
   display_name: string | null
+  home_latitude: number | null
+  home_longitude: number | null
   id: string
   intent: 'dating' | 'friendship' | null
   max_travel_minutes: number | null
   neighbourhood: string | null
+  preferred_crowd: string[] | null
+  preferred_energy: string[] | null
+  preferred_music: string[] | null
+  preferred_price: string[] | null
+  preferred_scene: string[] | null
+  preferred_setting: string[] | null
   subregion: string | null
 }
 
@@ -79,12 +97,11 @@ export async function GET(request: Request) {
   try {
     const user = await getUserFromAccessToken(token)
     const adminClient = createServerSupabaseAdminClient()
-    const nowIso = new Date().toISOString()
 
     const { data: profile, error: profileError } = await adminClient
       .from('profiles')
       .select(
-        'bio, cuisine_preferences, display_name, id, intent, max_travel_minutes, neighbourhood, subregion'
+        'bio, cuisine_preferences, display_name, home_latitude, home_longitude, id, intent, max_travel_minutes, neighbourhood, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, subregion'
       )
       .eq('id', user.id)
       .maybeSingle<ProfileRow>()
@@ -93,7 +110,19 @@ export async function GET(request: Request) {
       throw new Error(profileError.message)
     }
 
-    if (!profile) {
+    if (
+      !profile ||
+      !profile.display_name ||
+      profile.home_latitude === null ||
+      profile.home_longitude === null ||
+      !profile.subregion ||
+      !profile.preferred_energy?.length ||
+      !profile.preferred_scene?.length ||
+      !profile.preferred_crowd?.length ||
+      !profile.preferred_music?.length ||
+      !profile.preferred_setting?.length ||
+      !profile.preferred_price?.length
+    ) {
       return NextResponse.json({
         events: [],
         ok: true,
@@ -104,9 +133,10 @@ export async function GET(request: Request) {
     const { data: events, error: eventsError } = await adminClient
       .from('events')
       .select(
-        'capacity, description, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, viability_status'
+        'capacity, description, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting, viability_status'
       )
       .neq('status', 'cancelled')
+      .is('archived_at', null)
       .gte('starts_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
       .order('starts_at', { ascending: true })
       .limit(40)
@@ -230,14 +260,21 @@ export async function GET(request: Request) {
     const scoringProfile: ProfileForScoring = {
       bio: profile.bio,
       cuisine_preferences: profile.cuisine_preferences,
+      home_latitude: profile.home_latitude,
+      home_longitude: profile.home_longitude,
       id: profile.id,
       intent: profile.intent,
       max_travel_minutes: profile.max_travel_minutes,
+      preferred_crowd: profile.preferred_crowd,
+      preferred_energy: profile.preferred_energy,
+      preferred_music: profile.preferred_music,
+      preferred_price: profile.preferred_price,
+      preferred_scene: profile.preferred_scene,
+      preferred_setting: profile.preferred_setting,
       subregion: profile.subregion,
     }
 
-    return NextResponse.json({
-      events: (events ?? []).map((event) => {
+    const mappedEvents = (events ?? []).map((event) => {
         const attendeeCount = attendeeCountByEvent.get(event.id) ?? 0
         const confirmedTodayCount = confirmedTodayCountByEvent.get(event.id) ?? 0
         const userSignup = mySignupByEvent.get(event.id)
@@ -253,7 +290,32 @@ export async function GET(request: Request) {
           intent: event.intent,
           restaurant_cuisines: event.restaurant_cuisines,
           restaurant_subregion: event.restaurant_subregion,
+          venue_crowd: event.venue_crowd,
+          venue_energy: event.venue_energy,
+          venue_latitude: event.venue_latitude,
+          venue_longitude: event.venue_longitude,
+          venue_music: event.venue_music,
+          venue_price: event.venue_price,
+          venue_scene: event.venue_scene,
+          venue_setting: event.venue_setting,
         }
+        const projectedRestaurantScore =
+          userSignup?.restaurant_match_score ??
+          calculateRestaurantMatchScore(scoringProfile, scoringEvent)
+        const venueDistanceKm =
+          profile.home_latitude !== null &&
+          profile.home_longitude !== null &&
+          event.venue_latitude !== null &&
+          event.venue_longitude !== null
+            ? Number(
+                calculateDistanceKm(
+                  profile.home_latitude,
+                  profile.home_longitude,
+                  event.venue_latitude,
+                  event.venue_longitude
+                ).toFixed(1)
+              )
+            : null
         const needsDayOfConfirmation =
           userSignup?.status === 'going' &&
           userSignup.day_of_confirmation_status !== 'confirmed' &&
@@ -302,9 +364,9 @@ export async function GET(request: Request) {
           needsDayOfConfirmation,
           personalMatchScore: userSignup?.personal_match_score ?? null,
           personalMatchSummary: userSignup?.personal_match_summary ?? null,
-          projectedRestaurantScore:
-            userSignup?.restaurant_match_score ??
-            calculateRestaurantMatchScore(scoringProfile, scoringEvent),
+          projectedRestaurantScore,
+          venueDistanceKm,
+          venueMatchSummary: describeVenueMatch(scoringProfile, scoringEvent),
           shouldReconsiderGoing,
           signupStatus: userSignup?.status ?? null,
           spotsLeft: Math.max(0, event.capacity - attendeeCount),
@@ -312,7 +374,18 @@ export async function GET(request: Request) {
           waitlistCount: waitlist.length,
           waitlistPosition,
         }
-      }),
+      })
+
+    mappedEvents.sort((left, right) => {
+      if (right.projectedRestaurantScore !== left.projectedRestaurantScore) {
+        return right.projectedRestaurantScore - left.projectedRestaurantScore
+      }
+
+      return left.starts_at.localeCompare(right.starts_at)
+    })
+
+    return NextResponse.json({
+      events: mappedEvents,
       ok: true,
       onboardingRequired: false,
     })
