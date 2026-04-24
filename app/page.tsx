@@ -12,29 +12,28 @@ export default function Home() {
               Manhattan pilot
             </p>
             <h1 className="mt-5 max-w-3xl text-5xl font-semibold tracking-tight text-balance text-[color:var(--foreground)] sm:text-6xl">
-              Match people to the right night, not just the next event card.
+              Find the right table, not just the next thing on a list.
             </h1>
             <p className="tb-copy mt-6 max-w-2xl text-lg leading-8">
-              Users define the energy, scene, crowd, spend, and setting they
-              actually want. Restaurants and events are then ranked around fit,
-              not dumped into one flat feed.
+              Tastebuds learns what kind of dinner feels right, then brings back
+              restaurants and small-group plans that suit the mood.
             </p>
           </div>
 
           <div className="mt-8 grid gap-4">
             <ActionCard
-              description="Taste profile, venue tags, and proximity work together before event signup even enters the picture."
+              description="Build a taste profile, save the right spots, and join the tables that feel worth it."
               href="/signup"
-              label="Find my night"
+              label="Find my table"
             />
             <div className="tb-panel rounded-3xl p-6">
               <p className="tb-label text-xs font-medium uppercase tracking-[0.16em]">
                 What users get
               </p>
               <ul className="tb-copy mt-4 space-y-3 text-sm leading-6">
-                <li>Restaurant-first recommendations instead of generic event dumping</li>
-                <li>Saved venues that shape future supply and decision-making</li>
-                <li>Clear event detail, confirmation, and feedback flows</li>
+                <li>Restaurant picks shaped around taste, budget and social vibe</li>
+                <li>Saved favourites for the places you want to keep an eye on</li>
+                <li>Clear dinner details, confirmations and feedback after the table</li>
               </ul>
             </div>
           </div>
@@ -49,8 +48,8 @@ export default function Home() {
         Tastebuds is built for calm decisions.
       </h2>
       <p className="tb-copy mt-4 text-base leading-7">
-        The product matches taste to restaurants first, then helps you act on
-        the right events when timing and viability line up.
+        Start with the restaurants that fit you best, then move into the live
+        dinners worth joining.
       </p>
 
       <div className="mt-8 grid gap-4">

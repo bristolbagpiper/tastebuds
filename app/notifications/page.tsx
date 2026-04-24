@@ -144,7 +144,7 @@ export default function NotificationsPage() {
   }
 
   return (
-    <AppShell currentPath="/notifications" email={email} onLogout={handleLogout} title="Notifications">
+    <AppShell currentPath="/notifications" email={email} onLogout={handleLogout} title="Inbox">
       <PageHeader
         action={
           <div className="flex gap-2">
@@ -164,9 +164,9 @@ export default function NotificationsPage() {
             </Button>
           </div>
         }
-        description="Notification actions live here now instead of taking over the dashboard."
-        eyebrow="Notifications"
-        title="Your notifications"
+        description="Reminders, updates and day-of prompts for your plans."
+        eyebrow="Inbox"
+        title="Your inbox"
       />
 
       {error ? (

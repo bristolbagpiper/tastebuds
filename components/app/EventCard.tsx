@@ -1,37 +1,19 @@
 import { Button } from '@/components/app/Button'
 import { MatchScoreBadge } from '@/components/app/MatchScoreBadge'
 import { TasteTag } from '@/components/app/TasteTag'
-import {
-  formatDayConfirmationStatus,
-  formatEventDate,
-  formatViabilityStatus,
-} from '@/lib/app/format'
+import { formatDayConfirmationStatus, formatEventDate } from '@/lib/app/format'
 import type { DashboardEvent, FeedbackDraft } from '@/lib/app/types'
-
-function renderTags(values: string[] | null | undefined) {
-  if (!values?.length) {
-    return null
-  }
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {values.map((value) => (
-        <TasteTag key={value}>{value}</TasteTag>
-      ))}
-    </div>
-  )
-}
 
 function getActionLabel(
   event: DashboardEvent,
   eventActionLoadingId: number | null | undefined
 ) {
   if (eventActionLoadingId === event.id) {
-    return event.signupStatus === 'waitlisted' ? 'Updating...' : 'Joining...'
+    return 'Updating...'
   }
 
   if (event.status === 'closed' && !event.isJoined && event.signupStatus !== 'waitlisted') {
-    return 'Signup closed'
+    return 'Signups closed'
   }
 
   if (event.signupStatus === 'waitlisted') {
@@ -39,10 +21,50 @@ function getActionLabel(
   }
 
   if (event.isJoined) {
-    return 'Leave event'
+    return 'Leave table'
   }
 
-  return event.spotsLeft === 0 ? 'Join waitlist' : 'Join event'
+  return event.spotsLeft === 0 ? 'Join waitlist' : 'Join table'
+}
+
+function getListTags(event: DashboardEvent) {
+  const tags: string[] = []
+
+  if (event.restaurant_cuisines?.[0]) {
+    tags.push(event.restaurant_cuisines[0])
+  }
+
+  if (event.venue_price) {
+    tags.push(event.venue_price)
+  }
+
+  if (event.venue_energy) {
+    tags.push(event.venue_energy)
+  }
+
+  if (event.venue_scene?.[0]) {
+    tags.push(event.venue_scene[0])
+  }
+
+  return tags.slice(0, 5)
+}
+
+function getSeatSummary(event: DashboardEvent) {
+  if (event.isJoined) {
+    return 'You have a seat at this table.'
+  }
+
+  if (event.signupStatus === 'waitlisted') {
+    return event.waitlistPosition
+      ? `You are on the waitlist at #${event.waitlistPosition}.`
+      : 'You are on the waitlist for this table.'
+  }
+
+  if (event.spotsLeft > 0) {
+    return `${event.spotsLeft} ${event.spotsLeft === 1 ? 'seat' : 'seats'} left from a group of ${event.capacity}.`
+  }
+
+  return `The table is full, but the waitlist is open for this group of ${event.capacity}.`
 }
 
 export function EventCard({
@@ -68,96 +90,49 @@ export function EventCard({
   onSubmitFeedback?: () => void
   showDetails?: boolean
 }) {
+  const listTags = getListTags(event)
+
   return (
-    <article className="tb-panel-soft rounded-3xl p-6">
+    <article className="tb-panel-soft rounded-[2rem] p-6 shadow-[0_20px_45px_rgba(94,74,60,0.08)]">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-3xl">
           <div className="flex flex-wrap items-center gap-3">
             <MatchScoreBadge score={event.projectedRestaurantScore} />
-            <span className="rounded-full border border-[color:var(--border-soft)] bg-[color:var(--surface)] px-3 py-1 text-sm font-medium text-[color:var(--text-muted)]">
-              {formatViabilityStatus(event.viabilityStatus)}
-            </span>
+            {event.signupStatus === 'going' ? (
+              <span className="rounded-full border border-[color:var(--border-soft)] bg-[color:rgba(255,255,255,0.7)] px-3 py-1 text-sm font-medium text-[color:var(--text-muted)]">
+                Joined
+              </span>
+            ) : null}
+            {event.signupStatus === 'waitlisted' ? (
+              <span className="rounded-full border border-[color:var(--border-soft)] bg-[color:rgba(255,255,255,0.7)] px-3 py-1 text-sm font-medium text-[color:var(--text-muted)]">
+                Waitlist
+              </span>
+            ) : null}
           </div>
-          <h2 className="mt-3 text-2xl font-semibold text-[color:var(--foreground)]">
+          <h2 className="mt-4 text-2xl font-semibold text-[color:var(--foreground)]">
             {event.title}
           </h2>
           <p className="mt-2 text-sm text-[color:var(--foreground)]">
-            {event.restaurant_name} - {event.restaurant_subregion}
+            {event.restaurant_name} • {event.restaurant_subregion}
             {event.restaurant_neighbourhood ? `, ${event.restaurant_neighbourhood}` : ''}
           </p>
           <p className="tb-copy mt-1 text-sm">{formatEventDate(event.starts_at)}</p>
-          <p className="tb-copy mt-1 text-sm">Duration: {event.duration_minutes} minutes</p>
-          {event.venueDistanceKm !== null ? (
-            <p className="tb-copy mt-1 text-sm">
-              Approx {event.venueDistanceKm} km from your anchor
-            </p>
-          ) : null}
-        </div>
-        <div className="tb-panel rounded-3xl px-4 py-3 text-sm text-[color:var(--text-muted)]">
-          <p>
-            Attending:{' '}
-            <span className="font-medium text-[color:var(--foreground)]">
-              {event.attendeeCount}/{event.capacity}
-            </span>
-          </p>
-          <p>
-            Spots left:{' '}
-            <span className="font-medium text-[color:var(--foreground)]">{event.spotsLeft}</span>
-          </p>
-          <p>
-            Waitlist:{' '}
-            <span className="font-medium text-[color:var(--foreground)]">{event.waitlistCount}</span>
-          </p>
-          <p>
-            Today:{' '}
-            <span className="font-medium text-[color:var(--foreground)]">
-              {event.confirmedTodayCount}/{event.minimumViableAttendees}
-            </span>
-          </p>
+          <p className="tb-copy mt-2 text-sm">{getSeatSummary(event)}</p>
         </div>
       </div>
 
-      {event.description ? <p className="tb-copy mt-4 text-sm leading-7">{event.description}</p> : null}
+      <p className="mt-4 text-base leading-7 text-[color:var(--foreground)]">
+        {event.description?.trim() || 'Small dinners with people you are likely to get on with.'}
+      </p>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {event.venue_energy ? <TasteTag>{event.venue_energy}</TasteTag> : null}
-        {event.venue_price ? <TasteTag>{event.venue_price}</TasteTag> : null}
-        {renderTags(event.venue_scene)}
-        {renderTags(event.venue_crowd)}
-        {renderTags(event.venue_music)}
-        {renderTags(event.venue_setting)}
-        {event.restaurant_cuisines?.map((value) => (
-          <TasteTag key={`cuisine-${value}`}>{value}</TasteTag>
+        {listTags.map((value) => (
+          <TasteTag key={`${event.id}-${value}`}>{value}</TasteTag>
         ))}
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        <div className="tb-panel rounded-3xl p-4">
-          <p className="tb-label text-xs font-medium uppercase tracking-[0.14em]">Venue fit</p>
-          <p className="tb-copy mt-2 text-sm leading-6">{event.venueMatchSummary}</p>
-        </div>
-        <div className="tb-panel rounded-3xl p-4">
-          <p className="tb-label text-xs font-medium uppercase tracking-[0.14em]">Your status</p>
-          <p className="mt-2 text-base font-semibold text-[color:var(--foreground)]">
-            {event.signupStatus === 'going'
-              ? 'Confirmed'
-              : event.signupStatus === 'waitlisted'
-                ? `Waitlisted${event.waitlistPosition ? ` (#${event.waitlistPosition})` : ''}`
-                : 'Not joined'}
-          </p>
-          <p className="tb-copy mt-2 text-sm leading-6">
-            {event.signupStatus === 'going'
-              ? `Day-of response: ${formatDayConfirmationStatus(event.dayOfConfirmationStatus)}`
-              : event.personalMatchSummary ?? 'Join the event to compute your attendee fit.'}
-          </p>
-        </div>
-      </div>
-
       {!showDetails && detailHref ? (
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Button href={detailHref} variant="secondary">
-            Open details
-          </Button>
+        <div className="mt-6 flex flex-wrap gap-3">
           {onSetEventSignup ? (
             <Button
               disabled={eventActionLoadingId === event.id || (!event.isJoined && event.status !== 'open')}
@@ -169,15 +144,61 @@ export function EventCard({
               {getActionLabel(event, eventActionLoadingId)}
             </Button>
           ) : null}
+          <Button href={detailHref} variant="secondary">
+            See details
+          </Button>
         </div>
       ) : null}
 
       {showDetails ? (
         <>
+          <section className="mt-6 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-3xl bg-[color:rgba(255,255,255,0.62)] p-5">
+              <p className="tb-label text-xs font-medium uppercase tracking-[0.14em]">Why this fits you</p>
+              <p className="mt-3 text-sm leading-7 text-[color:var(--foreground)]">
+                {event.personalMatchSummary ?? event.venueMatchSummary}
+              </p>
+            </div>
+            <div className="rounded-3xl bg-[color:rgba(255,255,255,0.62)] p-5">
+              <p className="tb-label text-xs font-medium uppercase tracking-[0.14em]">What to expect</p>
+              <p className="mt-3 text-sm leading-7 text-[color:var(--foreground)]">
+                {event.description?.trim() ||
+                  `${event.restaurant_name} in ${event.restaurant_subregion}${event.restaurant_neighbourhood ? `, ${event.restaurant_neighbourhood}` : ''} for a group of ${event.capacity}.`}
+              </p>
+            </div>
+            <div className="rounded-3xl bg-[color:rgba(255,255,255,0.62)] p-5">
+              <p className="tb-label text-xs font-medium uppercase tracking-[0.14em]">Your seat</p>
+              <p className="mt-3 text-base font-semibold text-[color:var(--foreground)]">
+                {event.signupStatus === 'going'
+                  ? 'You are in'
+                  : event.signupStatus === 'waitlisted'
+                    ? 'You are on the waitlist'
+                    : 'You have not joined yet'}
+              </p>
+              <p className="tb-copy mt-2 text-sm leading-6">
+                {event.signupStatus === 'going'
+                  ? `Today’s reply: ${formatDayConfirmationStatus(event.dayOfConfirmationStatus)}.`
+                  : getSeatSummary(event)}
+              </p>
+            </div>
+            <div className="rounded-3xl bg-[color:rgba(255,255,255,0.62)] p-5">
+              <p className="tb-label text-xs font-medium uppercase tracking-[0.14em]">At a glance</p>
+              <div className="mt-3 space-y-2 text-sm text-[color:var(--foreground)]">
+                <p>{formatEventDate(event.starts_at)}</p>
+                <p>Table for {event.capacity}</p>
+                <p>
+                  {event.spotsLeft > 0
+                    ? `${event.spotsLeft} ${event.spotsLeft === 1 ? 'seat' : 'seats'} left`
+                    : 'Waitlist open'}
+                </p>
+              </div>
+            </div>
+          </section>
+
           {event.needsDayOfConfirmation && onSetDayOfConfirmation ? (
             <section className="mt-5 rounded-3xl border border-[color:color-mix(in_srgb,var(--accent)_28%,white)] bg-[color:color-mix(in_srgb,var(--accent)_10%,var(--surface))] p-4">
               <p className="text-xs font-medium uppercase tracking-[0.14em] text-[color:var(--accent-strong)]">
-                Today&apos;s confirmation
+                Confirmation needed today
               </p>
               <p className="mt-2 text-base font-semibold text-[color:var(--foreground)]">
                 This event is today. Confirm whether you are still going.
@@ -200,9 +221,9 @@ export function EventCard({
             </section>
           ) : null}
 
-          <section className="tb-panel mt-5 rounded-3xl p-4">
+          <section className="mt-5 rounded-3xl bg-[color:rgba(255,255,255,0.62)] p-5">
             <p className="tb-label text-xs font-medium uppercase tracking-[0.14em]">
-              Attendee visibility
+              Attendee preview
             </p>
             {event.canViewAttendees ? (
               <div className="mt-3 flex flex-wrap gap-2">
@@ -215,25 +236,23 @@ export function EventCard({
                       <span className="font-medium text-[color:var(--foreground)]">
                         {attendee.displayName}
                       </span>
-                      {' - '}
+                      {' • '}
                       {attendee.dayOfConfirmationStatus === 'confirmed' ? 'confirmed today' : 'pending today'}
                     </span>
                   ))
                 ) : (
-                  <p className="tb-copy text-sm">No confirmed attendees yet.</p>
+                  <p className="tb-copy text-sm">No one has confirmed yet.</p>
                 )}
               </div>
             ) : (
-              <p className="tb-copy mt-3 text-sm">
-                Join the event or waitlist to see attendee preview.
-              </p>
+              <p className="tb-copy mt-3 text-sm">Join to see more about the table.</p>
             )}
           </section>
 
           {event.canSubmitFeedback && feedbackDraft && onFeedbackDraftChange && onSubmitFeedback ? (
-            <section className="tb-panel mt-5 rounded-3xl p-4">
+            <section className="mt-5 rounded-3xl bg-[color:rgba(255,255,255,0.62)] p-5">
               <p className="tb-label text-xs font-medium uppercase tracking-[0.14em]">
-                Post-event feedback
+                After the dinner
               </p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <label className="space-y-2">

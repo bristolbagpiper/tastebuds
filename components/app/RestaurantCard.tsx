@@ -3,27 +3,47 @@ import Link from 'next/link'
 import { Button } from '@/components/app/Button'
 import { MatchScoreBadge } from '@/components/app/MatchScoreBadge'
 import { TasteTag } from '@/components/app/TasteTag'
-import { formatEventDate, formatViabilityStatus } from '@/lib/app/format'
 import type { DashboardRestaurant } from '@/lib/app/types'
 
-function renderTags(label: string, values: string[] | null | undefined) {
-  if (!values?.length) {
-    return null
+function getPriorityTags(restaurant: DashboardRestaurant) {
+  const tags: string[] = []
+
+  if (restaurant.restaurant_cuisines?.[0]) {
+    tags.push(restaurant.restaurant_cuisines[0])
   }
 
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="tb-label text-sm">{label}</span>
-      {values.map((value) => (
-        <TasteTag key={`${label}-${value}`}>{value}</TasteTag>
-      ))}
-    </div>
-  )
+  if (restaurant.venue_price) {
+    tags.push(restaurant.venue_price)
+  }
+
+  if (restaurant.venue_energy) {
+    tags.push(restaurant.venue_energy)
+  }
+
+  if (restaurant.venue_scene?.[0]) {
+    tags.push(restaurant.venue_scene[0])
+  }
+
+  if (restaurant.venue_setting?.[0]) {
+    tags.push(restaurant.venue_setting[0])
+  }
+
+  return tags.slice(0, 5)
+}
+
+function getMatchReason(restaurant: DashboardRestaurant) {
+  if (restaurant.venueMatchSummary) {
+    return restaurant.venueMatchSummary
+  }
+
+  if (restaurant.restaurant_cuisines?.length) {
+    return `Picked for ${restaurant.restaurant_cuisines[0].toLowerCase()} food in a setting that fits your night out.`
+  }
+
+  return 'Picked around your taste, budget and social vibe.'
 }
 
 export function RestaurantCard({
-  eventLoadingId,
-  onJoinEvent,
   onToggleSaved,
   restaurant,
   saving,
@@ -34,75 +54,49 @@ export function RestaurantCard({
   restaurant: DashboardRestaurant
   saving?: boolean
 }) {
+  const priorityTags = getPriorityTags(restaurant)
+
   return (
-    <article className="tb-panel-soft rounded-3xl p-6">
+    <article className="tb-panel-soft rounded-[2rem] p-6 shadow-[0_20px_45px_rgba(94,74,60,0.08)]">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="max-w-3xl">
           <div className="flex flex-wrap items-center gap-3">
             <MatchScoreBadge score={restaurant.matchScore} />
             {restaurant.isSaved ? (
-              <span className="rounded-full border border-[color:var(--border-soft)] bg-[color:var(--surface)] px-3 py-1 text-sm font-medium text-[color:var(--text-muted)]">
+              <span className="rounded-full border border-[color:var(--border-soft)] bg-[color:rgba(255,255,255,0.7)] px-3 py-1 text-sm font-medium text-[color:var(--text-muted)]">
                 Saved
               </span>
             ) : null}
           </div>
-          <h2 className="mt-3 text-2xl font-semibold text-[color:var(--foreground)]">
+          <h2 className="mt-4 text-2xl font-semibold text-[color:var(--foreground)]">
             {restaurant.name}
           </h2>
           <p className="tb-copy mt-2 text-sm">
-            {restaurant.subregion}
+            {restaurant.restaurant_cuisines?.[0] ?? 'Restaurant'} in {restaurant.subregion}
             {restaurant.neighbourhood ? `, ${restaurant.neighbourhood}` : ''}
           </p>
-          {restaurant.formattedAddress ? (
-            <p className="tb-copy mt-1 text-sm">{restaurant.formattedAddress}</p>
-          ) : null}
           {restaurant.googleRating !== null ? (
             <p className="tb-copy mt-1 text-sm">
-              Google rating {restaurant.googleRating} ({restaurant.googleUserRatingsTotal ?? 0}{' '}
-              reviews)
+              Rated {restaurant.googleRating} on Google
+              {restaurant.googleUserRatingsTotal
+                ? ` from ${restaurant.googleUserRatingsTotal} reviews`
+                : ''}
             </p>
           ) : null}
-          {restaurant.venueDistanceKm !== null ? (
-            <p className="tb-copy mt-1 text-sm">
-              Approx {restaurant.venueDistanceKm} km from your anchor
-            </p>
-          ) : null}
-        </div>
-        <div className="tb-panel rounded-3xl px-4 py-3 text-sm text-[color:var(--text-muted)]">
-          <p>
-            Energy:{' '}
-            <span className="font-medium text-[color:var(--foreground)]">
-              {restaurant.venue_energy ?? '--'}
-            </span>
-          </p>
-          <p>
-            Price:{' '}
-            <span className="font-medium text-[color:var(--foreground)]">
-              {restaurant.venue_price ?? '--'}
-            </span>
-          </p>
-          <p>
-            Events:{' '}
-            <span className="font-medium text-[color:var(--foreground)]">
-              {restaurant.availableEventCount}
-            </span>
-          </p>
         </div>
       </div>
 
-      <p className="tb-copy mt-4 text-sm leading-7">{restaurant.venueMatchSummary}</p>
+      <p className="mt-4 text-base leading-7 text-[color:var(--foreground)]">
+        {getMatchReason(restaurant)}
+      </p>
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {renderTags('Scene', restaurant.venue_scene)}
-        {renderTags('Crowd', restaurant.venue_crowd)}
-        {renderTags('Music', restaurant.venue_music)}
-        {renderTags('Setting', restaurant.venue_setting)}
-        {restaurant.restaurant_cuisines?.map((value) => (
-          <TasteTag key={`cuisine-${value}`}>{value}</TasteTag>
+        {priorityTags.map((value) => (
+          <TasteTag key={`${restaurant.id}-${value}`}>{value}</TasteTag>
         ))}
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-3">
+      <div className="mt-6 flex flex-wrap items-center gap-3">
         {onToggleSaved ? (
           <Button
             disabled={saving}
@@ -114,62 +108,30 @@ export function RestaurantCard({
             {saving ? 'Updating...' : restaurant.isSaved ? 'Remove from saved' : 'Save restaurant'}
           </Button>
         ) : null}
+        <Button href="/events" variant="secondary">
+          See events
+        </Button>
         {restaurant.googleMapsUri ? (
           <Button href={restaurant.googleMapsUri} target="_blank" variant="secondary">
-            Open map
+            View map
           </Button>
         ) : null}
       </div>
 
-      <div className="tb-panel mt-5 rounded-3xl p-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-medium text-[color:var(--foreground)]">Available events here</p>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm">
+        <p className="tb-copy">
+          {restaurant.availableEventCount > 0
+            ? `${restaurant.availableEventCount} live ${restaurant.availableEventCount === 1 ? 'table' : 'tables'} here right now.`
+            : 'No events are live here yet.'}
+        </p>
+        {restaurant.availableEventCount > 0 ? (
           <Link
-            className="text-sm font-medium text-[color:var(--text-muted)] hover:text-[color:var(--accent-strong)]"
+            className="font-medium text-[color:var(--accent-strong)] hover:text-[color:var(--foreground)]"
             href="/events"
           >
-            See all events
+            Browse tables
           </Link>
-        </div>
-        {restaurant.availableEvents.length > 0 ? (
-          <div className="mt-3 space-y-3">
-            {restaurant.availableEvents.map((event) => (
-              <div
-                className="tb-panel-quiet flex flex-wrap items-center justify-between gap-3 rounded-2xl px-3 py-3"
-                key={event.id}
-              >
-                <div>
-                  <p className="text-sm font-medium text-[color:var(--foreground)]">{event.title}</p>
-                  <p className="tb-copy mt-1 text-xs">{formatEventDate(event.startsAt)}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="tb-label text-xs">
-                    {formatViabilityStatus(event.viabilityStatus)}
-                  </span>
-                  {onJoinEvent ? (
-                    <Button
-                      disabled={eventLoadingId === event.id}
-                      onClick={() => onJoinEvent(event.id)}
-                      size="sm"
-                    >
-                      {eventLoadingId === event.id
-                        ? 'Updating...'
-                        : event.signupStatus === 'going'
-                          ? 'Joined'
-                          : event.signupStatus === 'waitlisted'
-                            ? 'Waitlisted'
-                            : 'Join'}
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="tb-copy mt-3 text-sm">
-            No active events here yet. That is exactly why restaurant-level saves matter.
-          </p>
-        )}
+        ) : null}
       </div>
     </article>
   )

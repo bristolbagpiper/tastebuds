@@ -86,11 +86,10 @@ export default function SignupPage() {
               New account
             </p>
             <h1 className="mt-5 text-5xl font-semibold tracking-tight text-[color:var(--foreground)]">
-              Build the profile that drives your night.
+              Build the profile that shapes your next table.
             </h1>
             <p className="tb-copy mt-6 max-w-xl text-lg leading-8">
-              Account creation is intentionally plain. The richer part happens after signup,
-              when the app starts ranking restaurants and events around actual taste.
+              Start with a simple account, then tell Tastebuds what kind of dinner actually feels right.
             </p>
           </div>
           <div className="tb-panel mt-8 rounded-3xl p-6">
@@ -99,8 +98,8 @@ export default function SignupPage() {
             </p>
             <ul className="tb-copy mt-4 space-y-3 text-sm leading-6">
               <li>Create account and confirm email if required</li>
-              <li>Complete the taste profile and home anchor</li>
-              <li>Start saving restaurants and joining the right events</li>
+              <li>Complete your taste profile and home area</li>
+              <li>Start saving restaurants and joining the right tables</li>
             </ul>
           </div>
         </>
@@ -110,8 +109,7 @@ export default function SignupPage() {
       <p className="tb-label text-sm font-medium uppercase tracking-[0.2em]">Create account</p>
       <h1 className="mt-3 text-3xl font-semibold text-[color:var(--foreground)]">Start with your login</h1>
       <p className="tb-copy mt-3 text-sm leading-6">
-        Start with email and password. Google SSO can be added once the provider
-        is fully configured in Supabase.
+        Start with email and password. You can finish the rest of your profile after signup.
       </p>
 
       <form onSubmit={handleSignup} className="mt-8 space-y-4">

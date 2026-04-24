@@ -37,11 +37,13 @@ function toggleValue(current: string[], value: string) {
 }
 
 function PreferenceGroup({
+  description,
   label,
+  onToggle,
   options,
   selected,
-  onToggle,
 }: {
+  description?: string
   label: string
   onToggle: (value: string) => void
   options: readonly string[]
@@ -50,6 +52,7 @@ function PreferenceGroup({
   return (
     <div className="space-y-3">
       <p className="text-sm font-medium text-[color:var(--foreground)]">{label}</p>
+      {description ? <p className="tb-copy text-sm">{description}</p> : null}
       <div className="flex flex-wrap gap-2">
         {options.map((option) => {
           const active = selected.includes(option)
@@ -78,6 +81,7 @@ export function ProfileEditor({
   backHref,
   backLabel,
   description,
+  embedded = false,
   eyebrow,
   redirectTo,
   title,
@@ -85,6 +89,7 @@ export function ProfileEditor({
   backHref: string
   backLabel: string
   description: string
+  embedded?: boolean
   eyebrow: string
   redirectTo: string
   title: string
@@ -92,12 +97,10 @@ export function ProfileEditor({
   const router = useRouter()
   const [userId, setUserId] = useState<string | null>(null)
   const [displayName, setDisplayName] = useState('')
-  const [subregion, setSubregion] =
-    useState<(typeof SUBREGIONS)[number]>('Midtown')
+  const [subregion, setSubregion] = useState<(typeof SUBREGIONS)[number]>('Midtown')
   const [neighbourhood, setNeighbourhood] = useState('')
   const [intent, setIntent] = useState<(typeof INTENTS)[number]>('friendship')
-  const [maxTravelMinutes, setMaxTravelMinutes] =
-    useState<(typeof TRAVEL_WINDOWS)[number]>(30)
+  const [maxTravelMinutes, setMaxTravelMinutes] = useState<(typeof TRAVEL_WINDOWS)[number]>(30)
   const [homeAnchorQuery, setHomeAnchorQuery] = useState('')
   const [homeLatitude, setHomeLatitude] = useState('')
   const [homeLongitude, setHomeLongitude] = useState('')
@@ -161,9 +164,7 @@ export function ProfileEditor({
         )
         setMaxTravelMinutes(
           profile.max_travel_minutes &&
-            TRAVEL_WINDOWS.includes(
-              profile.max_travel_minutes as (typeof TRAVEL_WINDOWS)[number]
-            )
+            TRAVEL_WINDOWS.includes(profile.max_travel_minutes as (typeof TRAVEL_WINDOWS)[number])
             ? (profile.max_travel_minutes as (typeof TRAVEL_WINDOWS)[number])
             : 30
         )
@@ -211,7 +212,7 @@ export function ProfileEditor({
       preferredSetting.length === 0 ||
       preferredPrice.length === 0
     ) {
-      setError('Complete the night-preference sections before continuing.')
+      setError('Complete each section before saving your taste profile.')
       return
     }
 
@@ -226,7 +227,7 @@ export function ProfileEditor({
       parsedHomeLongitude < -180 ||
       parsedHomeLongitude > 180
     ) {
-      setError('Enter a valid home latitude and longitude for proximity scoring.')
+      setError('Enter a valid latitude and longitude for your home area.')
       return
     }
 
@@ -273,8 +274,8 @@ export function ProfileEditor({
     )
   }
 
-  return (
-    <main className="mx-auto min-h-screen w-full max-w-4xl px-8 py-16">
+  const content = (
+    <>
       <div className="max-w-3xl">
         <p className="tb-label text-sm font-medium uppercase tracking-[0.2em]">{eyebrow}</p>
         <h1 className="mt-3 text-4xl font-semibold text-[color:var(--foreground)]">{title}</h1>
@@ -282,191 +283,219 @@ export function ProfileEditor({
       </div>
 
       <form className="mt-10 space-y-8" onSubmit={handleSave}>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-[color:var(--foreground)]">Display name</span>
-            <input
-              className="tb-input"
-              onChange={(event) => setDisplayName(event.target.value)}
-              placeholder="Alex"
-              required
-              value={displayName}
-            />
-          </label>
-
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-[color:var(--foreground)]">Subregion</span>
-            <select
-              className="tb-input"
-              onChange={(event) =>
-                setSubregion(event.target.value as (typeof SUBREGIONS)[number])
-              }
-              value={subregion}
-            >
-              {SUBREGIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-[color:var(--foreground)]">Neighbourhood</span>
-            <input
-              className="tb-input"
-              onChange={(event) => setNeighbourhood(event.target.value)}
-              placeholder="Lower East Side"
-              value={neighbourhood}
-            />
-          </label>
-
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-[color:var(--foreground)]">Connection mode</span>
-            <select
-              className="tb-input"
-              onChange={(event) =>
-                setIntent(event.target.value as (typeof INTENTS)[number])
-              }
-              value={intent}
-            >
-              {INTENTS.map((option) => (
-                <option key={option} value={option}>
-                  {option[0].toUpperCase() + option.slice(1)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <LocationSearchField
-            description="Search a Manhattan address or neighborhood. Selecting a result fills your anchor coordinates and nearby area."
-            label="Home anchor search"
-            onPick={applyHomeAnchorSuggestion}
-            placeholder="77 Bedford St, West Village"
-            query={homeAnchorQuery}
-            setQuery={setHomeAnchorQuery}
-          />
-
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-[color:var(--foreground)]">Home latitude</span>
-            <input
-              className="tb-input"
-              onChange={(event) => setHomeLatitude(event.target.value)}
-              placeholder="40.7306"
-              required
-              step="any"
-              type="number"
-              value={homeLatitude}
-            />
-          </label>
-
-          <label className="block space-y-2">
-            <span className="text-sm font-medium text-[color:var(--foreground)]">Home longitude</span>
-            <input
-              className="tb-input"
-              onChange={(event) => setHomeLongitude(event.target.value)}
-              placeholder="-73.9866"
-              required
-              step="any"
-              type="number"
-              value={homeLongitude}
-            />
-          </label>
-
-          <label className="block space-y-2 sm:col-span-2">
-            <span className="text-sm font-medium text-[color:var(--foreground)]">Max travel time</span>
-            <select
-              className="tb-input"
-              onChange={(event) =>
-                setMaxTravelMinutes(
-                  Number(event.target.value) as (typeof TRAVEL_WINDOWS)[number]
-                )
-              }
-              value={maxTravelMinutes}
-            >
-              {TRAVEL_WINDOWS.map((minutes) => (
-                <option key={minutes} value={minutes}>
-                  {minutes} minutes
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <section className="tb-panel-soft rounded-3xl p-6">
-          <h2 className="text-lg font-semibold text-[color:var(--foreground)]">Night preferences</h2>
+        <section className="tb-panel-soft rounded-[2rem] p-6">
+          <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Basics</h2>
           <p className="tb-copy mt-2 text-sm leading-6">
-            Pick the kinds of venues you actually want matched with. Broad picks
-            are fine, but leaving sections blank just weakens the model.
+            A few basics so your recommendations feel personal.
+          </p>
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-[color:var(--foreground)]">First name or display name</span>
+              <input
+                className="tb-input"
+                onChange={(event) => setDisplayName(event.target.value)}
+                placeholder="Alex"
+                required
+                value={displayName}
+              />
+            </label>
+
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-[color:var(--foreground)]">What are you open to?</span>
+              <select
+                className="tb-input"
+                onChange={(event) => setIntent(event.target.value as (typeof INTENTS)[number])}
+                value={intent}
+              >
+                {INTENTS.map((option) => (
+                  <option key={option} value={option}>
+                    {option[0].toUpperCase() + option.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block space-y-2 sm:col-span-2">
+              <span className="text-sm font-medium text-[color:var(--foreground)]">A quick line about your ideal night</span>
+              <textarea
+                className="tb-input min-h-32 rounded-3xl"
+                onChange={(event) => setBio(event.target.value)}
+                placeholder="Think warm room, easy conversation, good pasta and a table that does not feel too loud."
+                value={bio}
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="tb-panel-soft rounded-[2rem] p-6">
+          <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Location and travel</h2>
+          <p className="tb-copy mt-2 text-sm leading-6">
+            Use a rough home area so nearby tables are weighted properly.
+          </p>
+          <div className="mt-6 grid gap-5 sm:grid-cols-2">
+            <LocationSearchField
+              description="Search a Manhattan address or neighbourhood. Picking a result fills the nearby area and map point."
+              label="Home area"
+              onPick={applyHomeAnchorSuggestion}
+              placeholder="77 Bedford St, West Village"
+              query={homeAnchorQuery}
+              setQuery={setHomeAnchorQuery}
+            />
+
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-[color:var(--foreground)]">Neighbourhood</span>
+              <input
+                className="tb-input"
+                onChange={(event) => setNeighbourhood(event.target.value)}
+                placeholder="Lower East Side"
+                value={neighbourhood}
+              />
+            </label>
+
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-[color:var(--foreground)]">Part of Manhattan</span>
+              <select
+                className="tb-input"
+                onChange={(event) => setSubregion(event.target.value as (typeof SUBREGIONS)[number])}
+                value={subregion}
+              >
+                {SUBREGIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-[color:var(--foreground)]">How far are you happy to travel?</span>
+              <select
+                className="tb-input"
+                onChange={(event) =>
+                  setMaxTravelMinutes(Number(event.target.value) as (typeof TRAVEL_WINDOWS)[number])
+                }
+                value={maxTravelMinutes}
+              >
+                {TRAVEL_WINDOWS.map((minutes) => (
+                  <option key={minutes} value={minutes}>
+                    {minutes} minutes
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-[color:var(--foreground)]">Latitude</span>
+              <input
+                className="tb-input"
+                onChange={(event) => setHomeLatitude(event.target.value)}
+                placeholder="40.7306"
+                required
+                step="any"
+                type="number"
+                value={homeLatitude}
+              />
+            </label>
+
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-[color:var(--foreground)]">Longitude</span>
+              <input
+                className="tb-input"
+                onChange={(event) => setHomeLongitude(event.target.value)}
+                placeholder="-73.9866"
+                required
+                step="any"
+                type="number"
+                value={homeLongitude}
+              />
+            </label>
+          </div>
+          <p className="tb-label mt-4 text-xs">
+            Use a rough home location, not your exact front door.
+          </p>
+        </section>
+
+        <section className="tb-panel-soft rounded-[2rem] p-6">
+          <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Food preferences</h2>
+          <p className="tb-copy mt-2 text-sm leading-6">
+            Tell us what you actually like eating and what you want to spend.
+          </p>
+          <div className="mt-6 space-y-6">
+            <PreferenceGroup
+              description="Pick one or more price bands that feel comfortable for a weeknight or weekend dinner."
+              label="Budget"
+              onToggle={(value) => setPreferredPrice((current) => toggleValue(current, value))}
+              options={PRICE_TAGS}
+              selected={preferredPrice}
+            />
+
+            <label className="block space-y-2">
+              <span className="text-sm font-medium text-[color:var(--foreground)]">Favourite cuisines</span>
+              <input
+                className="tb-input"
+                onChange={(event) => setCuisinePreferences(event.target.value)}
+                placeholder="Italian, Japanese, Thai"
+                value={cuisinePreferences}
+              />
+              <span className="tb-label text-xs">
+                Optional. Add a few cuisines you would genuinely be happy to book.
+              </span>
+            </label>
+          </div>
+        </section>
+
+        <section className="tb-panel-soft rounded-[2rem] p-6">
+          <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Dinner vibe</h2>
+          <p className="tb-copy mt-2 text-sm leading-6">
+            These choices shape the mood of the room more than the menu.
           </p>
           <div className="mt-6 grid gap-6">
             <PreferenceGroup
+              description="Quiet catch-up, lively dinner, or something in between."
               label="Energy"
               onToggle={(value) => setPreferredEnergy((current) => toggleValue(current, value))}
               options={ENERGY_LEVELS}
               selected={preferredEnergy}
             />
             <PreferenceGroup
+              description="What kind of night are you after?"
               label="Scene"
               onToggle={(value) => setPreferredScene((current) => toggleValue(current, value))}
               options={SCENE_TAGS}
               selected={preferredScene}
             />
             <PreferenceGroup
-              label="Crowd"
-              onToggle={(value) => setPreferredCrowd((current) => toggleValue(current, value))}
-              options={CROWD_TAGS}
-              selected={preferredCrowd}
-            />
-            <PreferenceGroup
+              description="How much music do you want around the table?"
               label="Music"
               onToggle={(value) => setPreferredMusic((current) => toggleValue(current, value))}
               options={MUSIC_TAGS}
               selected={preferredMusic}
             />
             <PreferenceGroup
+              description="Pick the kinds of spaces that usually suit you."
               label="Setting"
               onToggle={(value) => setPreferredSetting((current) => toggleValue(current, value))}
               options={SETTING_TAGS}
               selected={preferredSetting}
             />
-            <PreferenceGroup
-              label="Price"
-              onToggle={(value) => setPreferredPrice((current) => toggleValue(current, value))}
-              options={PRICE_TAGS}
-              selected={preferredPrice}
-            />
           </div>
         </section>
 
-        <label className="block space-y-2">
-          <span className="text-sm font-medium text-[color:var(--foreground)]">Cuisine preferences</span>
-          <input
-            className="tb-input"
-            onChange={(event) => setCuisinePreferences(event.target.value)}
-            placeholder="Italian, Japanese, Thai"
-            value={cuisinePreferences}
-          />
-          <span className="tb-label text-xs">
-            Optional, comma-separated. Used as a secondary tie-breaker after the
-            weighted venue model.
-          </span>
-        </label>
-
-        <p className="tb-label text-xs">
-          Use a rough home anchor, not your exact front door. Search is faster,
-          but the coordinates remain editable because geocoders are not magic.
-        </p>
-
-        <label className="block space-y-2">
-          <span className="text-sm font-medium text-[color:var(--foreground)]">Short bio</span>
-          <textarea
-            className="tb-input min-h-32 rounded-3xl"
-            onChange={(event) => setBio(event.target.value)}
-            placeholder="What makes a good night out for you?"
-            value={bio}
-          />
-        </label>
+        <section className="tb-panel-soft rounded-[2rem] p-6">
+          <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Social preferences</h2>
+          <p className="tb-copy mt-2 text-sm leading-6">
+            The point is a table that feels comfortable, not just a good address.
+          </p>
+          <div className="mt-6 grid gap-6">
+            <PreferenceGroup
+              description="Choose the kinds of rooms and groups you tend to enjoy most."
+              label="Crowd"
+              onToggle={(value) => setPreferredCrowd((current) => toggleValue(current, value))}
+              options={CROWD_TAGS}
+              selected={preferredCrowd}
+            />
+          </div>
+        </section>
 
         {error ? (
           <div className="rounded-3xl border border-[color:color-mix(in_srgb,var(--accent)_28%,white)] bg-[color:color-mix(in_srgb,var(--accent)_10%,var(--surface))] p-4 text-sm text-[color:var(--accent-strong)]">
@@ -483,6 +512,12 @@ export function ProfileEditor({
           </Button>
         </div>
       </form>
-    </main>
+    </>
+  )
+
+  return embedded ? (
+    <div className="mx-auto w-full max-w-4xl">{content}</div>
+  ) : (
+    <main className="mx-auto min-h-screen w-full max-w-4xl px-8 py-16">{content}</main>
   )
 }

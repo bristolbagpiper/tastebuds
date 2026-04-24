@@ -4,11 +4,11 @@ export default function OnboardingPage() {
   return (
     <ProfileEditor
       backHref="/dashboard"
-      backLabel="Back to dashboard"
-      description="The old profile was too vague. This one captures the actual night you want so the app can rank venues with something more defensible than a random list."
-      eyebrow="Find My Night"
+      backLabel="Back to home"
+      description="Tell Tastebuds what a good night out feels like so we can start with the right places."
+      eyebrow="Taste profile"
       redirectTo="/dashboard"
-      title="Build the profile that drives your venue matches"
+      title="Build your taste profile"
     />
   )
 }

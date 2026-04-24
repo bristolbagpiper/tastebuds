@@ -139,9 +139,9 @@ export default function RestaurantsPage() {
             </Button>
           </div>
         }
-        description="This is the full restaurant surface. Save venues here, then act on event supply underneath them."
+        description="Restaurants picked around your taste, budget and social vibe."
         eyebrow="Restaurants"
-        title="Restaurant matches"
+        title="Find your next spot"
       />
 
       {error ? (
@@ -152,10 +152,10 @@ export default function RestaurantsPage() {
 
       <div className="mt-6 flex items-center justify-between gap-3">
         <p className="tb-copy text-sm">
-          {restaurants.filter((restaurant) => restaurant.isSaved).length} saved / {restaurants.length} matched
+          {restaurants.filter((restaurant) => restaurant.isSaved).length} saved / {restaurants.length} picked for you
         </p>
         <Button href="/events" variant="secondary">
-          Open events
+          Browse events
         </Button>
       </div>
 
@@ -178,8 +178,8 @@ export default function RestaurantsPage() {
                 Show all matches
               </Button>
             }
-            description="No restaurants fit the current filter."
-            title="Nothing to show"
+            description="No restaurants fit this view right now."
+            title="Nothing here yet"
           />
         )}
       </div>

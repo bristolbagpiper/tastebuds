@@ -23,7 +23,7 @@ export function BottomNav({ currentPath }: { currentPath: string }) {
                 'min-w-0 flex-1 rounded-2xl px-2 py-2.5 text-center text-xs font-medium transition',
                 isActive
                   ? 'bg-[color:var(--accent)] text-white shadow-[0_10px_24px_rgba(199,106,74,0.2)]'
-                  : 'text-[color:var(--text-muted)] hover:bg-[color:var(--surface)] hover:text-[color:var(--foreground)]'
+                  : 'bg-[color:rgba(255,255,255,0.66)] text-[color:var(--text-muted)] hover:bg-[color:var(--surface)] hover:text-[color:var(--foreground)]'
               )}
               href={item.href}
               key={item.href}

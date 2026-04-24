@@ -98,9 +98,9 @@ export default function EventsPage() {
   return (
     <AppShell currentPath="/events" email={email} onLogout={handleLogout} title="Events">
       <PageHeader
-        description="Joined plans stay at the top. Everything else remains available as a recommendation board."
+        description="Small dinners with people you are likely to get on with."
         eyebrow="Events"
-        title="Event matches"
+        title="Live tables"
       />
 
       {error ? (
@@ -122,8 +122,8 @@ export default function EventsPage() {
           ))
         ) : (
           <EmptyState
-            description="Admins need to publish actual venue nights before the event board becomes useful."
-            title="No events yet"
+            description="No events are live yet."
+            title="Nothing live right now"
           />
         )}
       </div>

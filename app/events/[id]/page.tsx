@@ -168,7 +168,7 @@ export default function EventDetailPage() {
             Back to events
           </Button>
         }
-        description="Detailed event actions live here now, not buried inside a giant dashboard."
+        description="Everything you need before, during and after the dinner."
         eyebrow="Events"
         title={event?.title ?? 'Event'}
       />
@@ -199,7 +199,7 @@ export default function EventDetailPage() {
                 Back to events
               </Button>
             }
-            description="This event is no longer available from the current API response."
+            description="This table is no longer available."
             title="Event not found"
           />
         )}

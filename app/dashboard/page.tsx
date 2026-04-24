@@ -11,7 +11,6 @@ import { EmptyState } from '@/components/app/EmptyState'
 import { EventCard } from '@/components/app/EventCard'
 import { PageHeader } from '@/components/app/PageHeader'
 import { RestaurantCard } from '@/components/app/RestaurantCard'
-import { StatCard } from '@/components/app/StatCard'
 import {
   fetchEvents,
   fetchNotifications,
@@ -21,7 +20,7 @@ import {
   setEventSignup,
   setSavedRestaurant,
 } from '@/lib/app/client'
-import { isSameCalendarDay, isProfileComplete } from '@/lib/app/format'
+import { isProfileComplete } from '@/lib/app/format'
 import type { DashboardEvent, DashboardRestaurant, NotificationSummary, Profile } from '@/lib/app/types'
 
 export default function DashboardPage() {
@@ -155,11 +154,7 @@ export default function DashboardPage() {
   const joinedEvents = events.filter(
     (event) => event.signupStatus === 'going' || event.signupStatus === 'waitlisted'
   )
-  const nextEvent =
-    joinedEvents[0] ??
-    events.find((event) => event.status === 'open') ??
-    null
-  const tonightCount = events.filter((event) => isSameCalendarDay(event.starts_at)).length
+  const nextEvent = joinedEvents[0] ?? events.find((event) => event.status === 'open') ?? null
 
   const nextAction = useMemo(() => {
     const dayConfirmationEvent = events.find((event) => event.needsDayOfConfirmation)
@@ -167,39 +162,39 @@ export default function DashboardPage() {
     if (dayConfirmationEvent) {
       return {
         cta: '/events/' + dayConfirmationEvent.id,
-        description: 'A joined event needs same-day confirmation.',
-        label: 'Confirm today',
+        description: 'A dinner you joined is happening today and still needs your reply.',
+        label: 'Confirm your table',
       }
     }
 
     if (unreadNotificationCount > 0) {
       return {
         cta: '/notifications',
-        description: `${unreadNotificationCount} unread notification${unreadNotificationCount === 1 ? '' : 's'} waiting.`,
-        label: 'Clear notifications',
+        description: `${unreadNotificationCount} unread ${unreadNotificationCount === 1 ? 'note is' : 'notes are'} waiting in your inbox.`,
+        label: 'Check your inbox',
       }
     }
 
     if (topRestaurant && !topRestaurant.isSaved) {
       return {
         cta: '/restaurants',
-        description: `${topRestaurant.name} is your strongest open restaurant match right now.`,
-        label: 'Review top restaurant',
+        description: `${topRestaurant.name} is a strong fit for your taste, budget and social vibe.`,
+        label: 'Save your next spot',
       }
     }
 
     if (nextEvent) {
       return {
         cta: `/events/${nextEvent.id}`,
-        description: 'Your best next event decision is already available.',
-        label: 'Open next event',
+        description: 'There is already a table worth deciding on.',
+        label: 'Review your next table',
       }
     }
 
     return {
       cta: '/profile',
-      description: 'Tighten your taste profile so the recommendations stay usable.',
-      label: 'Refine profile',
+      description: 'A sharper taste profile gives you better tables back.',
+      label: 'Refresh your profile',
     }
   }, [events, nextEvent, topRestaurant, unreadNotificationCount])
 
@@ -228,28 +223,23 @@ export default function DashboardPage() {
   }
 
   return (
-    <AppShell currentPath="/dashboard" email={email} onLogout={handleLogout} title="Dashboard">
+    <AppShell currentPath="/dashboard" email={email} onLogout={handleLogout} title="Home">
       <PageHeader
-        description="This is the home screen now, not the entire product stuffed into one route."
+        description="Find your next table."
         eyebrow="Home"
         title={`Good evening${profile?.display_name ? `, ${profile.display_name}` : ''}`}
       />
 
-      <div className="mt-6 grid gap-4 md:grid-cols-4">
-        <StatCard label="Top restaurant match" note={topRestaurant?.name ?? 'No match yet'} value={topRestaurant?.matchScore ?? '--'} />
-        <StatCard label="Saved restaurants" note="Your shortlist" value={savedRestaurants.length} />
-        <StatCard label="Tonight" note="Events happening today" value={tonightCount} />
-        <StatCard label="Unread notices" note="Needs attention" value={unreadNotificationCount} />
-      </div>
-
-      <section className="tb-panel-soft mt-6 rounded-3xl p-6">
-        <p className="tb-label text-xs font-medium uppercase tracking-[0.16em]">Best next action</p>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+      <section className="rounded-[2rem] border border-[color:rgba(199,106,74,0.16)] bg-[color:rgba(255,248,243,0.9)] px-6 py-7 shadow-[0_24px_50px_rgba(94,74,60,0.08)]">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-2xl font-semibold text-[color:var(--foreground)]">{nextAction.label}</p>
-            <p className="tb-copy mt-2 text-sm leading-6">{nextAction.description}</p>
+            <p className="tb-label text-xs font-medium uppercase tracking-[0.16em]">Start here</p>
+            <p className="mt-3 text-3xl font-semibold text-[color:var(--foreground)]">Find my table</p>
+            <p className="tb-copy mt-3 max-w-2xl text-base leading-7">
+              Restaurants picked around your taste, budget and social vibe.
+            </p>
           </div>
-          <Button href={nextAction.cta}>Open</Button>
+          <Button href="/restaurants">Find my table</Button>
         </div>
       </section>
 
@@ -259,33 +249,44 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
+      <section className="rounded-[2rem] bg-[color:rgba(255,255,255,0.56)] px-6 py-6">
+        <p className="tb-label text-xs font-medium uppercase tracking-[0.16em]">Best next step</p>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-2xl font-semibold text-[color:var(--foreground)]">{nextAction.label}</p>
+            <p className="tb-copy mt-2 max-w-2xl text-sm leading-7">{nextAction.description}</p>
+          </div>
+          <Button href={nextAction.cta}>Open</Button>
+        </div>
+      </section>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <ActionCard
-          description="Browse your matched restaurants, curate saved venues, and join from restaurant-led suggestions."
+          description="Browse places picked for your taste."
           href="/restaurants"
           label="Restaurants"
-          meta={<span className="tb-label text-sm font-medium">{restaurants.length}</span>}
+          meta={<span className="tb-label text-sm font-medium">{restaurants.length} picks</span>}
         />
         <ActionCard
-          description="Review joined plans, open opportunities, and waitlist status."
+          description="See live dinners and the ones you have joined."
           href="/events"
           label="Events"
-          meta={<span className="tb-label text-sm font-medium">{events.length}</span>}
+          meta={<span className="tb-label text-sm font-medium">{events.length} live</span>}
         />
         <ActionCard
-          description="Edit the taste profile that drives scoring and distance logic."
+          description="Open reminders, changes and table updates."
+          href="/notifications"
+          label="Inbox"
+          meta={<span className="tb-label text-sm font-medium">{unreadNotificationCount} unread</span>}
+        />
+        <ActionCard
+          description="Keep your taste profile up to date."
           href="/profile"
           label="Profile"
         />
-        <ActionCard
-          description="Clear notices, reminders, and event status changes without dragging that whole workflow into the home screen."
-          href="/notifications"
-          label="Notifications"
-          meta={<span className="tb-label text-sm font-medium">{unreadNotificationCount} unread</span>}
-        />
       </div>
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-6 xl:grid-cols-2">
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
             <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Top restaurant match</h2>
@@ -303,8 +304,8 @@ export default function DashboardPage() {
             />
           ) : (
             <EmptyState
-              description="No restaurant matches are available right now."
-              title="No restaurants yet"
+              description="No restaurant picks are ready yet."
+              title="Nothing picked yet"
             />
           )}
         </section>
@@ -327,8 +328,8 @@ export default function DashboardPage() {
             />
           ) : (
             <EmptyState
-              description="No event matches are available right now."
-              title="No events yet"
+              description={savedRestaurants.length > 0 ? 'No events are live yet.' : 'Save a few restaurants and we will surface the right dinners here.'}
+              title="Nothing live yet"
             />
           )}
         </section>
