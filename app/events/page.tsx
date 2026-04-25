@@ -4,16 +4,48 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
 import { AppShell } from '@/components/app/AppShell'
+import { Button } from '@/components/app/Button'
 import { EmptyState } from '@/components/app/EmptyState'
 import { EventCard } from '@/components/app/EventCard'
 import { PageHeader } from '@/components/app/PageHeader'
-import { fetchEvents, getAppBootstrap, logout, setEventSignup } from '@/lib/app/client'
-import type { DashboardEvent } from '@/lib/app/types'
+import {
+  fetchEvents,
+  fetchRestaurants,
+  getAppBootstrap,
+  logout,
+  setEventSignup,
+} from '@/lib/app/client'
+import type { DashboardEvent, DashboardRestaurant } from '@/lib/app/types'
+
+function getSavedRestaurantKeys(restaurants: DashboardRestaurant[]) {
+  return new Set(
+    restaurants
+      .filter((restaurant) => restaurant.isSaved)
+      .map((restaurant) =>
+        restaurant.googlePlaceId
+          ? `place:${restaurant.googlePlaceId}`
+          : `name:${restaurant.name.toLowerCase()}::${restaurant.subregion.toLowerCase()}`
+      )
+  )
+}
+
+function isVisibleEvent(event: DashboardEvent, savedRestaurantKeys: Set<string>) {
+  if (event.signupStatus === 'going') {
+    return true
+  }
+
+  const placeKey = event.restaurantGooglePlaceId
+    ? `place:${event.restaurantGooglePlaceId}`
+    : null
+  const fallbackKey = `name:${event.restaurant_name.toLowerCase()}::${event.restaurant_subregion.toLowerCase()}`
+
+  return (placeKey !== null && savedRestaurantKeys.has(placeKey)) || savedRestaurantKeys.has(fallbackKey)
+}
 
 export default function EventsPage() {
   const router = useRouter()
-  const [email, setEmail] = useState<string | null>(null)
   const [events, setEvents] = useState<DashboardEvent[]>([])
+  const [savedRestaurantKeys, setSavedRestaurantKeys] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [eventActionLoadingId, setEventActionLoadingId] = useState<number | null>(null)
@@ -29,19 +61,22 @@ export default function EventsPage() {
           return
         }
 
-        const payload = await fetchEvents(bootstrap.accessToken)
+        const [eventsPayload, restaurantsPayload] = await Promise.all([
+          fetchEvents(bootstrap.accessToken),
+          fetchRestaurants(bootstrap.accessToken),
+        ])
 
         if (!active) {
           return
         }
 
-        if (payload.onboardingRequired) {
+        if (eventsPayload.onboardingRequired || restaurantsPayload.onboardingRequired) {
           router.replace('/onboarding')
           return
         }
 
-        setEmail(bootstrap.email)
-        setEvents(payload.events ?? [])
+        setSavedRestaurantKeys(getSavedRestaurantKeys(restaurantsPayload.restaurants ?? []))
+        setEvents(eventsPayload.events ?? [])
         setLoading(false)
       } catch (nextError) {
         setError(nextError instanceof Error ? nextError.message : 'Could not load events.')
@@ -77,15 +112,16 @@ export default function EventsPage() {
   }
 
   const orderedEvents = useMemo(() => {
-    const joinedEvents = events.filter(
-      (event) => event.signupStatus === 'going' || event.signupStatus === 'waitlisted'
+    const visibleEvents = events.filter((event) => isVisibleEvent(event, savedRestaurantKeys))
+    const joinedEvents = visibleEvents.filter(
+      (event) => event.signupStatus === 'going'
     )
-    const unjoinedEvents = events.filter(
-      (event) => event.signupStatus !== 'going' && event.signupStatus !== 'waitlisted'
+    const unjoinedEvents = visibleEvents.filter(
+      (event) => event.signupStatus !== 'going'
     )
 
     return [...joinedEvents, ...unjoinedEvents]
-  }, [events])
+  }, [events, savedRestaurantKeys])
 
   if (loading) {
     return (
@@ -96,20 +132,28 @@ export default function EventsPage() {
   }
 
   return (
-    <AppShell currentPath="/events" email={email} onLogout={handleLogout} title="Events">
+    <AppShell currentPath="/events" onLogout={handleLogout}>
       <PageHeader
-        description="Small dinners with people you are likely to get on with."
+        description="Small dinners ranked by venue fit and the people you are likely to get on with."
         eyebrow="Events"
-        title="Live tables"
+        title="Tables worth joining"
       />
 
       {error ? (
-        <div className="mt-6 rounded-3xl border border-[color:color-mix(in_srgb,var(--accent)_28%,white)] bg-[color:color-mix(in_srgb,var(--accent)_10%,var(--surface))] p-4 text-sm text-[color:var(--accent-strong)]">
+        <div className="rounded-[1.5rem] border border-[#f3d87a] bg-[#fff8dc] p-4 text-sm text-[#715c00]">
           {error}
         </div>
       ) : null}
 
-      <div className="mt-6 grid gap-4">
+      <div className="rounded-[1.75rem] border border-[color:var(--border-soft)] bg-white p-5 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+        <p className="text-sm text-[color:var(--text-muted)]">
+          {orderedEvents.length > 0
+            ? `${orderedEvents.length} live ${orderedEvents.length === 1 ? 'table' : 'tables'} ranked by your match score right now.`
+            : 'Save a restaurant first to unlock live tables here.'}
+        </p>
+      </div>
+
+      <div className="grid gap-5">
         {orderedEvents.length > 0 ? (
           orderedEvents.map((event) => (
             <EventCard
@@ -122,8 +166,13 @@ export default function EventsPage() {
           ))
         ) : (
           <EmptyState
-            description="No events are live yet."
-            title="Nothing live right now"
+            action={
+              <Button href="/restaurants">
+                Save a restaurant
+              </Button>
+            }
+            description="Events only appear here after you save the venue, so this list stays tied to places you actually want."
+            title="No saved-venue tables yet"
           />
         )}
       </div>

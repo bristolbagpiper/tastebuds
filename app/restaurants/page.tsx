@@ -8,24 +8,23 @@ import { Button } from '@/components/app/Button'
 import { EmptyState } from '@/components/app/EmptyState'
 import { PageHeader } from '@/components/app/PageHeader'
 import { RestaurantCard } from '@/components/app/RestaurantCard'
+import { RestaurantDetailsModal } from '@/components/app/RestaurantDetailsModal'
 import {
   fetchRestaurants,
   getAppBootstrap,
   logout,
-  setEventSignup,
   setSavedRestaurant,
 } from '@/lib/app/client'
 import type { DashboardRestaurant } from '@/lib/app/types'
 
 export default function RestaurantsPage() {
   const router = useRouter()
-  const [email, setEmail] = useState<string | null>(null)
   const [restaurants, setRestaurants] = useState<DashboardRestaurant[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showSavedOnly, setShowSavedOnly] = useState(false)
+  const [selectedRestaurant, setSelectedRestaurant] = useState<DashboardRestaurant | null>(null)
   const [restaurantActionLoadingId, setRestaurantActionLoadingId] = useState<number | null>(null)
-  const [eventActionLoadingId, setEventActionLoadingId] = useState<number | null>(null)
 
   useEffect(() => {
     let active = true
@@ -49,7 +48,6 @@ export default function RestaurantsPage() {
           return
         }
 
-        setEmail(bootstrap.email)
         setRestaurants(payload.restaurants ?? [])
         setLoading(false)
       } catch (nextError) {
@@ -87,21 +85,6 @@ export default function RestaurantsPage() {
     }
   }
 
-  async function handleJoinEvent(eventId: number) {
-    setError('')
-    setEventActionLoadingId(eventId)
-
-    try {
-      await setEventSignup(eventId, 'join')
-      const payload = await fetchRestaurants()
-      setRestaurants(payload.restaurants ?? [])
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Could not join event.')
-    } finally {
-      setEventActionLoadingId(null)
-    }
-  }
-
   const visibleRestaurants = useMemo(
     () =>
       showSavedOnly
@@ -119,7 +102,7 @@ export default function RestaurantsPage() {
   }
 
   return (
-    <AppShell currentPath="/restaurants" email={email} onLogout={handleLogout} title="Restaurants">
+    <AppShell currentPath="/restaurants" onLogout={handleLogout}>
       <PageHeader
         action={
           <div className="flex gap-2">
@@ -139,33 +122,32 @@ export default function RestaurantsPage() {
             </Button>
           </div>
         }
-        description="Restaurants picked around your taste, budget and social vibe."
+        description="Restaurants ranked by how well they match your taste, budget and social vibe."
         eyebrow="Restaurants"
-        title="Find your next spot"
+        title="Places to start from"
       />
 
       {error ? (
-        <div className="mt-6 rounded-3xl border border-[color:color-mix(in_srgb,var(--accent)_28%,white)] bg-[color:color-mix(in_srgb,var(--accent)_10%,var(--surface))] p-4 text-sm text-[color:var(--accent-strong)]">
+        <div className="rounded-[1.5rem] border border-[#f3d87a] bg-[#fff8dc] p-4 text-sm text-[#715c00]">
           {error}
         </div>
       ) : null}
 
-      <div className="mt-6 flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[1.75rem] border border-[color:var(--border-soft)] bg-white p-5 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
         <p className="tb-copy text-sm">
-          {restaurants.filter((restaurant) => restaurant.isSaved).length} saved / {restaurants.length} picked for you
+          {restaurants.filter((restaurant) => restaurant.isSaved).length} saved / {restaurants.length} ranked for you by taste match
         </p>
         <Button href="/events" variant="secondary">
           Browse events
         </Button>
       </div>
 
-      <div className="mt-6 grid gap-4">
+      <div className="grid gap-5">
         {visibleRestaurants.length > 0 ? (
           visibleRestaurants.map((restaurant) => (
             <RestaurantCard
-              eventLoadingId={eventActionLoadingId}
               key={restaurant.id}
-              onJoinEvent={(eventId) => void handleJoinEvent(eventId)}
+              onOpenDetails={setSelectedRestaurant}
               onToggleSaved={(restaurantId, action) => void handleToggleSaved(restaurantId, action)}
               restaurant={restaurant}
               saving={restaurantActionLoadingId === restaurant.id}
@@ -183,6 +165,18 @@ export default function RestaurantsPage() {
           />
         )}
       </div>
+
+      {selectedRestaurant ? (
+        <RestaurantDetailsModal
+          onClose={() => setSelectedRestaurant(null)}
+          onToggleSaved={(restaurantId, action) => void handleToggleSaved(restaurantId, action)}
+          restaurant={
+            restaurants.find((restaurant) => restaurant.id === selectedRestaurant.id) ??
+            selectedRestaurant
+          }
+          saving={restaurantActionLoadingId === selectedRestaurant.id}
+        />
+      ) : null}
     </AppShell>
   )
 }

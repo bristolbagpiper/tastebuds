@@ -1,6 +1,5 @@
 import { Button } from '@/components/app/Button'
 import { TasteTag } from '@/components/app/TasteTag'
-import { formatIntent } from '@/lib/app/format'
 import type { Profile } from '@/lib/app/types'
 
 function renderTags(values: string[] | null | undefined) {
@@ -41,7 +40,7 @@ export function ProfileSummaryCard({
           <p className="tb-copy mt-2 text-sm">
             Connection mode:{' '}
             <span className="font-medium text-[color:var(--foreground)]">
-              {profile.intent ? formatIntent(profile.intent) : 'Not set'}
+              Friendship
             </span>
           </p>
           <p className="tb-copy mt-1 text-sm">

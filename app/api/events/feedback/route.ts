@@ -23,7 +23,7 @@ type EventRow = {
 }
 
 type SignupRow = {
-  status: 'going' | 'waitlisted' | 'cancelled' | 'removed' | 'no_show' | 'attended'
+  status: 'going' | 'cancelled' | 'removed' | 'no_show' | 'attended'
 }
 
 function parseBearerToken(request: Request) {

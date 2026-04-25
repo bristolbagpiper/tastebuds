@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 
 import {
-  promoteWaitlistedAttendees,
   refreshEventViability,
   syncEventSignupScores,
 } from '@/lib/event-operations'
@@ -27,7 +26,7 @@ type EventRow = {
 }
 
 type SignupRow = {
-  status: 'going' | 'waitlisted' | 'cancelled' | 'removed' | 'no_show' | 'attended'
+  status: 'going' | 'cancelled' | 'removed' | 'no_show' | 'attended'
 }
 
 function parseBearerToken(request: Request) {
@@ -159,7 +158,6 @@ export async function POST(request: Request) {
       throw new Error(declineError.message)
     }
 
-    await promoteWaitlistedAttendees(adminClient, eventId)
     await syncEventSignupScores(adminClient, eventId)
     await refreshEventViability(adminClient, eventId)
 

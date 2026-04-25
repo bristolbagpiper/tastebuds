@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { Button } from '@/components/app/Button'
+import { TastebudsLogo } from '@/components/TastebudsLogo'
 
 export function AuthShell({
   children,
@@ -16,9 +17,7 @@ export function AuthShell({
       <div className="mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-7xl flex-col gap-6 lg:min-h-[calc(100vh-4rem)]">
         <header className="tb-panel flex items-center justify-between gap-4 rounded-3xl px-5 py-4">
           <div>
-            <p className="tb-label text-xs font-medium uppercase tracking-[0.18em]">
-              Tastebuds
-            </p>
+            <TastebudsLogo size="sm" />
             <p className="mt-1 text-lg font-semibold text-[color:var(--foreground)]">
               {title ?? 'Find my night'}
             </p>

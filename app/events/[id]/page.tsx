@@ -1,7 +1,7 @@
 'use client'
 
 import { useParams, useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { AppShell } from '@/components/app/AppShell'
 import { Button } from '@/components/app/Button'
@@ -10,6 +10,7 @@ import { EventCard } from '@/components/app/EventCard'
 import { PageHeader } from '@/components/app/PageHeader'
 import {
   fetchEvents,
+  fetchRestaurants,
   getAppBootstrap,
   logout,
   setDayOfConfirmation,
@@ -17,13 +18,38 @@ import {
   submitFeedback,
 } from '@/lib/app/client'
 import { toFeedbackDraft } from '@/lib/app/format'
-import type { DashboardEvent, FeedbackDraft } from '@/lib/app/types'
+import type { DashboardEvent, DashboardRestaurant, FeedbackDraft } from '@/lib/app/types'
+
+function getSavedRestaurantKeys(restaurants: DashboardRestaurant[]) {
+  return new Set(
+    restaurants
+      .filter((restaurant) => restaurant.isSaved)
+      .map((restaurant) =>
+        restaurant.googlePlaceId
+          ? `place:${restaurant.googlePlaceId}`
+          : `name:${restaurant.name.toLowerCase()}::${restaurant.subregion.toLowerCase()}`
+      )
+  )
+}
+
+function isVisibleEvent(event: DashboardEvent, savedRestaurantKeys: Set<string>) {
+  if (event.signupStatus === 'going') {
+    return true
+  }
+
+  const placeKey = event.restaurantGooglePlaceId
+    ? `place:${event.restaurantGooglePlaceId}`
+    : null
+  const fallbackKey = `name:${event.restaurant_name.toLowerCase()}::${event.restaurant_subregion.toLowerCase()}`
+
+  return (placeKey !== null && savedRestaurantKeys.has(placeKey)) || savedRestaurantKeys.has(fallbackKey)
+}
 
 export default function EventDetailPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const eventId = Number(params.id)
-  const [email, setEmail] = useState<string | null>(null)
+  const [allEvents, setAllEvents] = useState<DashboardEvent[]>([])
   const [event, setEvent] = useState<DashboardEvent | null>(null)
   const [feedbackDraft, setFeedbackDraft] = useState<FeedbackDraft | null>(null)
   const [loading, setLoading] = useState(true)
@@ -33,8 +59,14 @@ export default function EventDetailPage() {
 
   async function reloadEvent() {
     const bootstrap = await getAppBootstrap()
-    const payload = await fetchEvents(bootstrap.accessToken)
-    const nextEvent = (payload.events ?? []).find((item) => item.id === eventId) ?? null
+    const [eventsPayload, restaurantsPayload] = await Promise.all([
+      fetchEvents(bootstrap.accessToken),
+      fetchRestaurants(bootstrap.accessToken),
+    ])
+    const savedRestaurantKeys = getSavedRestaurantKeys(restaurantsPayload.restaurants ?? [])
+    const visibleEvents = (eventsPayload.events ?? []).filter((item) => isVisibleEvent(item, savedRestaurantKeys))
+    setAllEvents(visibleEvents)
+    const nextEvent = visibleEvents.find((item) => item.id === eventId) ?? null
     setEvent(nextEvent)
     setFeedbackDraft(nextEvent ? toFeedbackDraft(nextEvent) : null)
   }
@@ -50,19 +82,24 @@ export default function EventDetailPage() {
           return
         }
 
-        const payload = await fetchEvents(bootstrap.accessToken)
+        const [eventsPayload, restaurantsPayload] = await Promise.all([
+          fetchEvents(bootstrap.accessToken),
+          fetchRestaurants(bootstrap.accessToken),
+        ])
 
         if (!active) {
           return
         }
 
-        if (payload.onboardingRequired) {
+        if (eventsPayload.onboardingRequired || restaurantsPayload.onboardingRequired) {
           router.replace('/onboarding')
           return
         }
 
-        const nextEvent = (payload.events ?? []).find((item) => item.id === eventId) ?? null
-        setEmail(bootstrap.email)
+        const savedRestaurantKeys = getSavedRestaurantKeys(restaurantsPayload.restaurants ?? [])
+        const visibleEvents = (eventsPayload.events ?? []).filter((item) => isVisibleEvent(item, savedRestaurantKeys))
+        const nextEvent = visibleEvents.find((item) => item.id === eventId) ?? null
+        setAllEvents(visibleEvents)
         setEvent(nextEvent)
         setFeedbackDraft(nextEvent ? toFeedbackDraft(nextEvent) : null)
         setLoading(false)
@@ -84,6 +121,51 @@ export default function EventDetailPage() {
       active = false
     }
   }, [eventId, router])
+
+  const similarEvents = useMemo(() => {
+    if (!event) {
+      return []
+    }
+
+    return allEvents
+      .filter(
+        (candidate) =>
+          candidate.id !== event.id &&
+          candidate.status === 'open' &&
+          candidate.spotsLeft > 0 &&
+          !candidate.isJoined
+      )
+      .sort((left, right) => {
+        const leftCuisineMatch =
+          left.restaurant_cuisines?.[0] &&
+          event.restaurant_cuisines?.includes(left.restaurant_cuisines[0])
+            ? 1
+            : 0
+        const rightCuisineMatch =
+          right.restaurant_cuisines?.[0] &&
+          event.restaurant_cuisines?.includes(right.restaurant_cuisines[0])
+            ? 1
+            : 0
+
+        if (rightCuisineMatch !== leftCuisineMatch) {
+          return rightCuisineMatch - leftCuisineMatch
+        }
+
+        const leftAreaMatch = left.restaurant_subregion === event.restaurant_subregion ? 1 : 0
+        const rightAreaMatch = right.restaurant_subregion === event.restaurant_subregion ? 1 : 0
+
+        if (rightAreaMatch !== leftAreaMatch) {
+          return rightAreaMatch - leftAreaMatch
+        }
+
+        if (right.projectedRestaurantScore !== left.projectedRestaurantScore) {
+          return right.projectedRestaurantScore - left.projectedRestaurantScore
+        }
+
+        return left.starts_at.localeCompare(right.starts_at)
+      })
+      .slice(0, 3)
+  }, [allEvents, event])
 
   async function handleLogout() {
     await logout()
@@ -161,7 +243,7 @@ export default function EventDetailPage() {
   }
 
   return (
-    <AppShell currentPath="/events" email={email} onLogout={handleLogout} title="Event detail">
+    <AppShell currentPath="/events" onLogout={handleLogout}>
       <PageHeader
         action={
           <Button href="/events" variant="secondary">
@@ -170,16 +252,16 @@ export default function EventDetailPage() {
         }
         description="Everything you need before, during and after the dinner."
         eyebrow="Events"
-        title={event?.title ?? 'Event'}
+        title={event?.title ?? 'Table details'}
       />
 
       {error ? (
-        <div className="mt-6 rounded-3xl border border-[color:color-mix(in_srgb,var(--accent)_28%,white)] bg-[color:color-mix(in_srgb,var(--accent)_10%,var(--surface))] p-4 text-sm text-[color:var(--accent-strong)]">
+        <div className="rounded-[1.5rem] border border-[#f3d87a] bg-[#fff8dc] p-4 text-sm text-[#715c00]">
           {error}
         </div>
       ) : null}
 
-      <div className="mt-6">
+      <div>
         {event && feedbackDraft ? (
           <EventCard
             event={event}
@@ -190,6 +272,7 @@ export default function EventDetailPage() {
             onSetDayOfConfirmation={(action) => void handleDayOfConfirmation(action)}
             onSetEventSignup={(action) => void handleEventSignup(action)}
             onSubmitFeedback={() => void handleFeedbackSubmit()}
+            similarEvents={similarEvents}
             showDetails
           />
         ) : (
@@ -199,8 +282,8 @@ export default function EventDetailPage() {
                 Back to events
               </Button>
             }
-            description="This table is no longer available."
-            title="Event not found"
+            description="Save the venue first or join from a saved-venue table to open the full event details."
+            title="This table is not available here"
           />
         )}
       </div>

@@ -10,8 +10,6 @@ export type NotificationType =
   | 'event_reminder_24h'
   | 'event_reminder_2h'
   | 'event_follow_up'
-  | 'event_waitlist'
-  | 'event_promoted'
   | 'event_day_confirmation'
   | 'event_attendance'
 

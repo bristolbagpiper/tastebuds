@@ -1,19 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f8f1e8;
-  --foreground: #2e241f;
-  --font-app-sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --background: #f9f9f7;
+  --foreground: #1a1c1b;
+  --font-app-sans: "Epilogue", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-app-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-  --surface: #fffdf9;
-  --surface-soft: #f6ede3;
-  --surface-strong: #fffaf4;
-  --border-soft: #e7d7c8;
-  --text-muted: #75665c;
-  --accent: #c76a4a;
-  --accent-strong: #a95438;
-  --shadow-soft: 0 18px 44px rgba(86, 54, 34, 0.08);
-  --shadow-float: 0 10px 28px rgba(86, 54, 34, 0.06);
+  --surface: #ffffff;
+  --surface-soft: #f4f4f2;
+  --surface-strong: #eeeeec;
+  --border-soft: #ece7dc;
+  --text-muted: #6c6558;
+  --accent: #ffd740;
+  --accent-strong: #d29000;
+  --accent-text: #231b00;
+  --link: #3d8db0;
+  --shadow-soft: 0 18px 44px rgba(113, 92, 0, 0.08);
+  --shadow-float: 0 10px 40px -10px rgba(113, 92, 0, 0.08);
 }
 
 @theme inline {
@@ -46,21 +48,21 @@ textarea {
 .tb-panel {
   border: 1px solid var(--border-soft);
   background: var(--surface);
-  border-radius: 1.5rem;
+  border-radius: 1.75rem;
   box-shadow: var(--shadow-float);
 }
 
 .tb-panel-soft {
   border: 1px solid var(--border-soft);
-  background: var(--surface-soft);
-  border-radius: 1.5rem;
+  background: var(--surface);
+  border-radius: 1.75rem;
   box-shadow: var(--shadow-float);
 }
 
 .tb-panel-quiet {
   border: 1px solid var(--border-soft);
-  background: color-mix(in srgb, var(--surface) 82%, var(--background));
-  border-radius: 1.25rem;
+  background: var(--surface-soft);
+  border-radius: 1.5rem;
 }
 
 .tb-label {
@@ -90,15 +92,12 @@ textarea {
 }
 
 .tb-input:focus {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-soft));
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 12%, white);
+  border-color: color-mix(in srgb, var(--accent-strong) 45%, var(--border-soft));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, white);
 }
 
 .tb-surface-bg {
-  background:
-    radial-gradient(circle at top left, rgba(199, 106, 74, 0.08), transparent 28%),
-    radial-gradient(circle at top right, rgba(125, 78, 54, 0.06), transparent 24%),
-    var(--background);
+  background: var(--background);
 }
 
 .tb-skeleton {

@@ -20,7 +20,6 @@ import type { NotificationSummary } from '@/lib/app/types'
 
 export default function NotificationsPage() {
   const router = useRouter()
-  const [email, setEmail] = useState<string | null>(null)
   const [notifications, setNotifications] = useState<NotificationSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -51,7 +50,6 @@ export default function NotificationsPage() {
         return
       }
 
-      setEmail(bootstrap.email)
       setNotifications(response.data ?? [])
       setLoading(false)
     }
@@ -144,7 +142,7 @@ export default function NotificationsPage() {
   }
 
   return (
-    <AppShell currentPath="/notifications" email={email} onLogout={handleLogout} title="Inbox">
+    <AppShell currentPath="/notifications" onLogout={handleLogout}>
       <PageHeader
         action={
           <div className="flex gap-2">
@@ -166,16 +164,16 @@ export default function NotificationsPage() {
         }
         description="Reminders, updates and day-of prompts for your plans."
         eyebrow="Inbox"
-        title="Your inbox"
+        title="Your dinner inbox"
       />
 
       {error ? (
-        <div className="mt-6 rounded-3xl border border-[color:color-mix(in_srgb,var(--accent)_28%,white)] bg-[color:color-mix(in_srgb,var(--accent)_10%,var(--surface))] p-4 text-sm text-[color:var(--accent-strong)]">
+        <div className="rounded-[1.5rem] border border-[#f3d87a] bg-[#fff8dc] p-4 text-sm text-[#715c00]">
           {error}
         </div>
       ) : null}
 
-      <div className="mt-6 flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-3 rounded-[1.75rem] border border-[color:var(--border-soft)] bg-white p-5 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
         <Button
           disabled={notificationActionLoading || unreadCount === 0}
           onClick={() => void handleMarkAllRead()}
@@ -192,7 +190,7 @@ export default function NotificationsPage() {
         </Button>
       </div>
 
-      <div className="mt-6 grid gap-4">
+      <div className="grid gap-5">
         {visibleNotifications.length > 0 ? (
           visibleNotifications.map((notification) => (
             <NotificationCard

@@ -95,7 +95,7 @@ export default function LoginPage() {
             </p>
             <ul className="tb-copy mt-4 space-y-3 text-sm leading-6">
               <li>Restaurant matches and saved venues</li>
-              <li>Joined events, waitlists, and day-of confirmations</li>
+              <li>Joined events and day-of confirmations</li>
               <li>Notifications and feedback history</li>
             </ul>
           </div>

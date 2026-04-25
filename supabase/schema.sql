@@ -275,6 +275,24 @@ alter table public.profiles
 add column if not exists preferred_price text[] not null default '{}';
 
 alter table public.profiles
+add column if not exists preferred_vibes text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists drinking_preferences text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists dietary_restrictions text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists conversation_preference text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists age_range_comfort text[] not null default '{}';
+
+alter table public.profiles
+add column if not exists group_size_comfort text[] not null default '{}';
+
+alter table public.profiles
 add column if not exists home_latitude double precision;
 
 alter table public.profiles
@@ -292,6 +310,20 @@ create table if not exists public.restaurants (
   google_rating numeric(3,2),
   google_user_ratings_total integer,
   google_price_level text,
+  google_open_now boolean,
+  google_opening_hours text[] not null default '{}',
+  google_good_for_groups boolean,
+  google_good_for_watching_sports boolean,
+  google_live_music boolean,
+  google_outdoor_seating boolean,
+  google_reservable boolean,
+  google_serves_beer boolean,
+  google_serves_brunch boolean,
+  google_serves_cocktails boolean,
+  google_serves_dessert boolean,
+  google_serves_dinner boolean,
+  google_serves_vegetarian_food boolean,
+  google_serves_wine boolean,
   google_editorial_summary text,
   google_phone_number text,
   google_website_uri text,
@@ -303,6 +335,18 @@ create table if not exists public.restaurants (
   venue_music text[] not null default '{}',
   venue_setting text[] not null default '{}',
   venue_price text check (venue_price in ('$', '$$', '$$$', '$$$$')),
+  venue_noise_level text check (venue_noise_level in ('Quiet', 'Moderate', 'Lively')),
+  venue_seating_types text[] not null default '{}',
+  venue_formats text[] not null default '{}',
+  venue_indoor_outdoor text[] not null default '{}',
+  venue_reservation_friendly boolean,
+  venue_group_friendly boolean,
+  venue_good_for_conversation boolean,
+  venue_good_for_cocktails boolean,
+  venue_good_for_dinner boolean,
+  venue_good_for_casual_meetups boolean,
+  venue_vibes text[] not null default '{}',
+  menu_experience_tags text[] not null default '{}',
   created_by uuid references auth.users(id) on delete set null,
   archived_at timestamptz,
   created_at timestamptz not null default timezone('utc', now())
@@ -386,6 +430,32 @@ create table if not exists public.events (
   venue_music text[] not null default '{}',
   venue_setting text[] not null default '{}',
   venue_price text check (venue_price in ('$', '$$', '$$$', '$$$$')),
+  google_open_now boolean,
+  google_opening_hours text[] not null default '{}',
+  google_good_for_groups boolean,
+  google_good_for_watching_sports boolean,
+  google_live_music boolean,
+  google_outdoor_seating boolean,
+  google_reservable boolean,
+  google_serves_beer boolean,
+  google_serves_brunch boolean,
+  google_serves_cocktails boolean,
+  google_serves_dessert boolean,
+  google_serves_dinner boolean,
+  google_serves_vegetarian_food boolean,
+  google_serves_wine boolean,
+  venue_noise_level text check (venue_noise_level in ('Quiet', 'Moderate', 'Lively')),
+  venue_seating_types text[] not null default '{}',
+  venue_formats text[] not null default '{}',
+  venue_indoor_outdoor text[] not null default '{}',
+  venue_reservation_friendly boolean,
+  venue_group_friendly boolean,
+  venue_good_for_conversation boolean,
+  venue_good_for_cocktails boolean,
+  venue_good_for_dinner boolean,
+  venue_good_for_casual_meetups boolean,
+  venue_vibes text[] not null default '{}',
+  menu_experience_tags text[] not null default '{}',
   capacity integer not null default 12 check (capacity > 0 and capacity <= 200),
   description text,
   status text not null default 'open' check (status in ('open', 'closed', 'cancelled')),
@@ -490,6 +560,14 @@ check (
     'event_day_confirmation'
   )
 );
+
+update public.profiles
+set intent = 'friendship'
+where intent is distinct from 'friendship';
+
+update public.events
+set intent = 'friendship'
+where intent is distinct from 'friendship';
 
 create table if not exists public.event_feedback (
   id bigint generated always as identity primary key,

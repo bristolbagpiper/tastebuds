@@ -1,31 +1,35 @@
 import type { ReactNode } from 'react'
+import { Epilogue } from 'next/font/google'
 
 import { cx } from '@/lib/app/format'
 
 import { BottomNav } from '@/components/app/BottomNav'
+import { SiteFooter } from '@/components/app/SiteFooter'
 import { TopNav } from '@/components/app/TopNav'
+
+const epilogue = Epilogue({
+  subsets: ['latin'],
+  weight: ['300', '400', '500', '600', '700', '800', '900'],
+})
 
 export function AppShell({
   children,
   currentPath,
-  email,
   onLogout,
-  title,
 }: {
   children: ReactNode
   currentPath: string
-  email?: string | null
   onLogout?: () => void
-  title?: string
 }) {
   return (
-    <main className="tb-surface-bg min-h-screen text-[color:var(--foreground)]">
-      <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-28 pt-5 sm:px-6 lg:px-8 lg:pb-16 lg:pt-8">
-        <TopNav currentPath={currentPath} email={email} onLogout={onLogout} title={title} />
-        <div className={cx('mt-8 flex-1 space-y-10 pb-6 sm:space-y-12 lg:mt-10 lg:pb-10')}>
+    <main className={cx(epilogue.className, 'tb-surface-bg min-h-screen text-[color:var(--foreground)]')}>
+      <TopNav currentPath={currentPath} onLogout={onLogout} />
+      <div className="mx-auto w-full max-w-7xl px-6 py-10 pb-28 lg:px-8 lg:py-14">
+        <div className={cx('space-y-10 pb-6 sm:space-y-12 lg:pb-10')}>
           {children}
         </div>
       </div>
+      <SiteFooter />
       <BottomNav currentPath={currentPath} />
     </main>
   )

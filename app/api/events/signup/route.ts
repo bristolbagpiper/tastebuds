@@ -1,16 +1,9 @@
 import { NextResponse } from 'next/server'
 
 import {
-  calculateRestaurantMatchScore,
-  type EventForScoring,
-  type ProfileForScoring,
-} from '@/lib/events'
-import {
-  promoteWaitlistedAttendees,
   refreshEventViability,
   syncEventSignupScores,
 } from '@/lib/event-operations'
-import { isPastWaitlistPromotionCutoff } from '@/lib/event-time'
 import { queueNotifications } from '@/lib/notifications'
 import {
   createServerSupabaseAdminClient,
@@ -49,30 +42,13 @@ type SignupRow = {
   personal_match_score: number
   personal_match_summary: string | null
   restaurant_match_score: number
-  status: 'going' | 'waitlisted' | 'cancelled' | 'removed' | 'no_show' | 'attended'
+  status: 'going' | 'cancelled' | 'removed' | 'no_show' | 'attended'
 }
 
 type JoinEventResultRow = {
   error: string | null
   ok: boolean
-  status: 'going' | 'waitlisted' | 'closed' | 'not_found'
-}
-
-type ProfileRow = {
-  bio: string | null
-  cuisine_preferences: string[] | null
-  home_latitude: number | null
-  home_longitude: number | null
-  id: string
-  intent: 'dating' | 'friendship' | null
-  max_travel_minutes: number | null
-  preferred_crowd: string[] | null
-  preferred_energy: string[] | null
-  preferred_music: string[] | null
-  preferred_price: string[] | null
-  preferred_scene: string[] | null
-  preferred_setting: string[] | null
-  subregion: string | null
+  status: 'going' | 'closed' | 'not_found' | string
 }
 
 function parseBearerToken(request: Request) {
@@ -133,7 +109,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const { data: existingSignup, error: existingSignupError } = await adminClient
+    const { error: existingSignupError } = await adminClient
       .from('event_signups')
       .select(
         'personal_match_score, personal_match_summary, restaurant_match_score, status'
@@ -165,10 +141,6 @@ export async function POST(request: Request) {
         throw new Error(leaveError.message)
       }
 
-      if (existingSignup?.status === 'going') {
-        await promoteWaitlistedAttendees(adminClient, eventId)
-      }
-
       await syncEventSignupScores(adminClient, eventId)
       await refreshEventViability(adminClient, eventId)
 
@@ -182,6 +154,23 @@ export async function POST(request: Request) {
     if (event.status !== 'open') {
       return NextResponse.json(
         { error: 'This event is not open for signups.' },
+        { status: 400 }
+      )
+    }
+
+    const { count: attendeeCount, error: attendeeCountError } = await adminClient
+      .from('event_signups')
+      .select('*', { count: 'exact', head: true })
+      .eq('event_id', eventId)
+      .eq('status', 'going')
+
+    if (attendeeCountError) {
+      throw new Error(attendeeCountError.message)
+    }
+
+    if ((attendeeCount ?? 0) >= event.capacity) {
+      return NextResponse.json(
+        { error: 'This table is full. Try a similar table instead.' },
         { status: 400 }
       )
     }
@@ -219,83 +208,27 @@ export async function POST(request: Request) {
     await syncEventSignupScores(adminClient, eventId)
     await refreshEventViability(adminClient, eventId)
 
-    if (joinResult.status === 'waitlisted') {
-      const { data: profile, error: profileError } = await adminClient
-        .from('profiles')
-        .select(
-          'bio, cuisine_preferences, home_latitude, home_longitude, id, intent, max_travel_minutes, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, subregion'
-        )
-        .eq('id', user.id)
-        .maybeSingle<ProfileRow>()
-
-      if (profileError) {
-        throw new Error(profileError.message)
-      }
-
-      if (
-        !profile?.preferred_energy?.length ||
-        profile.home_latitude === null ||
-        profile.home_longitude === null ||
-        !profile.preferred_scene?.length ||
-        !profile.preferred_crowd?.length ||
-        !profile.preferred_music?.length ||
-        !profile.preferred_setting?.length ||
-        !profile.preferred_price?.length
-      ) {
-        return NextResponse.json(
-          { error: 'Complete your Find My Night profile before joining events.' },
-          { status: 400 }
-        )
-      }
-
-      const scoringProfile: ProfileForScoring = {
-        bio: profile?.bio ?? null,
-        cuisine_preferences: profile?.cuisine_preferences ?? [],
-        home_latitude: profile?.home_latitude ?? null,
-        home_longitude: profile?.home_longitude ?? null,
-        id: user.id,
-        intent: profile?.intent ?? null,
-        max_travel_minutes: profile?.max_travel_minutes ?? null,
-        preferred_crowd: profile?.preferred_crowd ?? [],
-        preferred_energy: profile?.preferred_energy ?? [],
-        preferred_music: profile?.preferred_music ?? [],
-        preferred_price: profile?.preferred_price ?? [],
-        preferred_scene: profile?.preferred_scene ?? [],
-        preferred_setting: profile?.preferred_setting ?? [],
-        subregion: profile?.subregion ?? null,
-      }
-      const scoringEvent: EventForScoring = {
-        intent: event.intent,
-        restaurant_cuisines: event.restaurant_cuisines,
-        restaurant_subregion: event.restaurant_subregion,
-        venue_crowd: event.venue_crowd,
-        venue_energy: event.venue_energy,
-        venue_latitude: event.venue_latitude,
-        venue_longitude: event.venue_longitude,
-        venue_music: event.venue_music,
-        venue_price: event.venue_price,
-        venue_scene: event.venue_scene,
-        venue_setting: event.venue_setting,
-      }
-
-      const { error: waitlistScoreError } = await adminClient
+    if (joinResult.status !== 'going') {
+      const { error: cleanupError } = await adminClient
         .from('event_signups')
         .update({
-          personal_match_score: 50,
-          personal_match_summary:
-            'You are currently on the waitlist. Personal fit will lock in if a confirmed seat opens.',
-          restaurant_match_score: calculateRestaurantMatchScore(
-            scoringProfile,
-            scoringEvent
-          ),
+          status: 'cancelled',
           updated_at: new Date().toISOString(),
         })
         .eq('event_id', eventId)
         .eq('user_id', user.id)
 
-      if (waitlistScoreError) {
-        throw new Error(waitlistScoreError.message)
+      if (cleanupError) {
+        throw new Error(cleanupError.message)
       }
+
+      await syncEventSignupScores(adminClient, eventId)
+      await refreshEventViability(adminClient, eventId)
+
+      return NextResponse.json(
+        { error: 'This table is full. Try a similar table instead.' },
+        { status: 400 }
+      )
     }
 
     const { data: refreshedSignup, error: refreshedSignupError } = await adminClient
@@ -316,18 +249,11 @@ export async function POST(request: Request) {
     await queueNotifications([
       {
         body:
-          joinResult.status === 'waitlisted'
-            ? isPastWaitlistPromotionCutoff(event.starts_at)
-              ? `You are on the waitlist for ${event.title} at ${event.restaurant_name}, but late-day promotion is now closed. A host would need to reopen the seat manually.`
-              : `You are on the waitlist for ${event.title} at ${event.restaurant_name}. We will notify you if a confirmed seat opens.`
-            : `You're in for ${event.title} at ${event.restaurant_name}. Restaurant and personal scores are now live on your dashboard.`,
+          `You're in for ${event.title} at ${event.restaurant_name}. Restaurant and personal scores are now live on your dashboard.`,
         duplicateBehavior: 'rearm',
         eventId: event.id,
-        title:
-          joinResult.status === 'waitlisted'
-            ? 'You joined the waitlist'
-            : 'Event signup confirmed',
-        type: joinResult.status === 'waitlisted' ? 'event_waitlist' : 'event_signup',
+        title: 'Event signup confirmed',
+        type: 'event_signup',
         userId: user.id,
       },
     ])

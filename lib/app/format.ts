@@ -20,8 +20,53 @@ export function formatNotificationDate(value: string) {
   }).format(new Date(value))
 }
 
-export function formatIntent(intent: 'dating' | 'friendship') {
-  return intent === 'dating' ? 'Dating' : 'Friendship'
+export function formatIntent() {
+  return 'Friendship'
+}
+
+export function formatMatchScore(score: number | null | undefined) {
+  if (typeof score !== 'number' || Number.isNaN(score)) {
+    return '--'
+  }
+
+  return `${Math.max(0, Math.min(100, Math.round(score)))}/100`
+}
+
+export function describeMatchStrength(score: number | null | undefined) {
+  if (typeof score !== 'number' || Number.isNaN(score)) {
+    return 'Personal fit'
+  }
+
+  if (score >= 90) {
+    return 'Exceptional fit'
+  }
+
+  if (score >= 80) {
+    return 'Strong fit'
+  }
+
+  if (score >= 65) {
+    return 'Good fit'
+  }
+
+  return 'Stretch fit'
+}
+
+export function formatGooglePriceLevel(value: string | null | undefined) {
+  switch (value) {
+    case 'PRICE_LEVEL_FREE':
+      return 'Free'
+    case 'PRICE_LEVEL_INEXPENSIVE':
+      return '$'
+    case 'PRICE_LEVEL_MODERATE':
+      return '$$'
+    case 'PRICE_LEVEL_EXPENSIVE':
+      return '$$$'
+    case 'PRICE_LEVEL_VERY_EXPENSIVE':
+      return '$$$$'
+    default:
+      return value ?? null
+  }
 }
 
 export function formatNotificationType(type: NotificationSummary['type']) {
@@ -35,10 +80,6 @@ export function formatNotificationType(type: NotificationSummary['type']) {
     case 'event_reminder_24h':
     case 'event_reminder_2h':
       return 'Reminder'
-    case 'event_waitlist':
-      return 'Waitlist'
-    case 'event_promoted':
-      return 'Promotion'
     case 'event_day_confirmation':
       return 'Confirm today'
     case 'event_follow_up':

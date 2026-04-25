@@ -131,7 +131,7 @@ export async function fetchProfile(userId: string) {
   return supabase
     .from('profiles')
     .select(
-      'bio, cuisine_preferences, display_name, home_latitude, home_longitude, intent, max_travel_minutes, neighbourhood, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, subregion'
+      'age_range_comfort, bio, conversation_preference, cuisine_preferences, dietary_restrictions, display_name, drinking_preferences, group_size_comfort, home_latitude, home_longitude, intent, max_travel_minutes, neighbourhood, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, preferred_vibes, subregion'
     )
     .eq('id', userId)
     .maybeSingle<Profile>()

@@ -11,7 +11,6 @@ function SkeletonBlock({
 
 export function AppPageSkeleton({
   currentPath,
-  title,
   variant = 'list',
 }: {
   currentPath: string
@@ -19,7 +18,7 @@ export function AppPageSkeleton({
   variant?: 'dashboard' | 'detail' | 'form' | 'list'
 }) {
   return (
-    <AppShell currentPath={currentPath} title={title}>
+    <AppShell currentPath={currentPath}>
       <div className="space-y-6">
         <div className="space-y-3">
           <SkeletonBlock className="h-3 w-20 rounded-full" />

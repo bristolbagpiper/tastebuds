@@ -70,6 +70,7 @@ type EventSummary = {
   feedback_count: number
   id: number
   intent: EventIntent
+  menu_experience_tags: string[]
   minimum_viable_attendees: number
   noShowCount: number
   restaurant_id: number | null
@@ -82,14 +83,38 @@ type EventSummary = {
   title: string
   venue_crowd: string[]
   venue_energy: string | null
+  venue_formats: string[]
+  venue_good_for_casual_meetups: boolean | null
+  venue_good_for_cocktails: boolean | null
+  venue_good_for_conversation: boolean | null
+  venue_good_for_dinner: boolean | null
+  venue_group_friendly: boolean | null
+  venue_indoor_outdoor: string[]
   venue_latitude: number | null
   venue_longitude: number | null
   venue_music: string[]
+  venue_noise_level: string | null
   venue_price: string | null
+  venue_reservation_friendly: boolean | null
   venue_scene: string[]
+  venue_seating_types: string[]
   venue_setting: string[]
+  venue_vibes: string[]
+  google_good_for_groups: boolean | null
+  google_good_for_watching_sports: boolean | null
+  google_live_music: boolean | null
+  google_open_now: boolean | null
+  google_opening_hours: string[]
+  google_outdoor_seating: boolean | null
+  google_reservable: boolean | null
+  google_serves_beer: boolean | null
+  google_serves_brunch: boolean | null
+  google_serves_cocktails: boolean | null
+  google_serves_dessert: boolean | null
+  google_serves_dinner: boolean | null
+  google_serves_vegetarian_food: boolean | null
+  google_serves_wine: boolean | null
   viability_status: 'healthy' | 'at_risk' | 'forced_go' | 'cancelled_low_confirmations'
-  waitlistCount: number
   would_join_again_count: number
 }
 
@@ -108,7 +133,6 @@ type EventAttendee = {
     | 'going'
     | 'no_show'
     | 'removed'
-    | 'waitlisted'
   subregion: string | null
   user_id: string
 }
@@ -124,28 +148,53 @@ type AdminAnalyticsSummary = {
   totalEvents: number
   totalFeedback: number
   totalNoShows: number
-  totalWaitlisted: number
 }
 
 type RestaurantSnapshot = {
   archived_at: string | null
   cuisines: string[] | null
+  google_good_for_groups: boolean | null
+  google_good_for_watching_sports: boolean | null
+  google_live_music: boolean | null
+  google_open_now: boolean | null
+  google_opening_hours: string[] | null
+  google_outdoor_seating: boolean | null
+  google_reservable: boolean | null
+  google_serves_beer: boolean | null
+  google_serves_brunch: boolean | null
+  google_serves_cocktails: boolean | null
+  google_serves_dessert: boolean | null
+  google_serves_dinner: boolean | null
+  google_serves_vegetarian_food: boolean | null
+  google_serves_wine: boolean | null
   id: number
+  menu_experience_tags: string[] | null
   name: string
   neighbourhood: string | null
   subregion: ManhattanSubregion
   venue_crowd: string[] | null
   venue_energy: string | null
+  venue_formats: string[] | null
+  venue_good_for_casual_meetups: boolean | null
+  venue_good_for_cocktails: boolean | null
+  venue_good_for_conversation: boolean | null
+  venue_good_for_dinner: boolean | null
+  venue_group_friendly: boolean | null
+  venue_indoor_outdoor: string[] | null
   venue_latitude: number | null
   venue_longitude: number | null
   venue_music: string[] | null
+  venue_noise_level: string | null
   venue_price: string | null
+  venue_reservation_friendly: boolean | null
   venue_scene: string[] | null
+  venue_seating_types: string[] | null
   venue_setting: string[] | null
+  venue_vibes: string[] | null
 }
 
 const EVENT_SUMMARY_SELECT =
-  'archived_at, capacity, created_at, description, duration_minutes, id, intent, minimum_viable_attendees, restaurant_id, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting, viability_status'
+  'archived_at, capacity, created_at, description, duration_minutes, google_good_for_groups, google_good_for_watching_sports, google_live_music, google_open_now, google_opening_hours, google_outdoor_seating, google_reservable, google_serves_beer, google_serves_brunch, google_serves_cocktails, google_serves_dessert, google_serves_dinner, google_serves_vegetarian_food, google_serves_wine, id, intent, menu_experience_tags, minimum_viable_attendees, restaurant_id, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_formats, venue_good_for_casual_meetups, venue_good_for_cocktails, venue_good_for_conversation, venue_good_for_dinner, venue_group_friendly, venue_indoor_outdoor, venue_latitude, venue_longitude, venue_music, venue_noise_level, venue_price, venue_reservation_friendly, venue_scene, venue_seating_types, venue_setting, venue_vibes, viability_status'
 
 function hasEventEnded(startsAt: string, durationMinutes: number) {
   return new Date(startsAt).getTime() + durationMinutes * 60 * 1000 <= Date.now()
@@ -158,7 +207,7 @@ async function getRestaurantSnapshot(
   const { data: restaurant, error } = await adminClient
     .from('restaurants')
     .select(
-      'archived_at, cuisines, id, name, neighbourhood, subregion, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting'
+      'archived_at, cuisines, google_good_for_groups, google_good_for_watching_sports, google_live_music, google_open_now, google_opening_hours, google_outdoor_seating, google_reservable, google_serves_beer, google_serves_brunch, google_serves_cocktails, google_serves_dessert, google_serves_dinner, google_serves_vegetarian_food, google_serves_wine, id, menu_experience_tags, name, neighbourhood, subregion, venue_crowd, venue_energy, venue_formats, venue_good_for_casual_meetups, venue_good_for_cocktails, venue_good_for_conversation, venue_good_for_dinner, venue_group_friendly, venue_indoor_outdoor, venue_latitude, venue_longitude, venue_music, venue_noise_level, venue_price, venue_reservation_friendly, venue_scene, venue_seating_types, venue_setting, venue_vibes'
     )
     .eq('id', restaurantId)
     .maybeSingle<RestaurantSnapshot>()
@@ -200,7 +249,6 @@ async function fetchEvents(includeArchived: boolean) {
         | 'dropoffCount'
         | 'feedback_count'
         | 'noShowCount'
-        | 'waitlistCount'
         | 'would_join_again_count'
       >[]
     >()
@@ -225,7 +273,6 @@ async function fetchEvents(includeArchived: boolean) {
         totalEvents: 0,
         totalFeedback: 0,
         totalNoShows: 0,
-        totalWaitlisted: 0,
       } satisfies AdminAnalyticsSummary,
     }
   }
@@ -243,7 +290,7 @@ async function fetchEvents(includeArchived: boolean) {
         personal_match_score: number
         personal_match_summary: string | null
         restaurant_match_score: number
-        status: 'attended' | 'cancelled' | 'going' | 'no_show' | 'removed' | 'waitlisted'
+        status: 'attended' | 'cancelled' | 'going' | 'no_show' | 'removed'
         user_id: string
       }[]
     >()
@@ -275,7 +322,6 @@ async function fetchEvents(includeArchived: boolean) {
   const confirmedTodayCountByEvent = new Map<number, number>()
   const dropoffCountByEvent = new Map<number, number>()
   const noShowCountByEvent = new Map<number, number>()
-  const waitlistCountByEvent = new Map<number, number>()
   const userIds = Array.from(new Set((signups ?? []).map((signup) => signup.user_id)))
 
   const { data: profiles, error: profilesError } = userIds.length
@@ -325,11 +371,6 @@ async function fetchEvents(includeArchived: boolean) {
           (confirmedTodayCountByEvent.get(signup.event_id) ?? 0) + 1
         )
       }
-    } else if (signup.status === 'waitlisted') {
-      waitlistCountByEvent.set(
-        signup.event_id,
-        (waitlistCountByEvent.get(signup.event_id) ?? 0) + 1
-      )
     } else if (signup.status === 'attended') {
       attendedCountByEvent.set(
         signup.event_id,
@@ -416,13 +457,11 @@ async function fetchEvents(includeArchived: boolean) {
     dropoffCount: dropoffCountByEvent.get(event.id) ?? 0,
     feedback_count: feedbackByEvent.get(event.id)?.feedback_count ?? 0,
     noShowCount: noShowCountByEvent.get(event.id) ?? 0,
-    waitlistCount: waitlistCountByEvent.get(event.id) ?? 0,
     would_join_again_count: feedbackByEvent.get(event.id)?.would_join_again_count ?? 0,
   }))
 
   const totalEvents = mappedEvents.length
   const totalConfirmed = mappedEvents.reduce((total, event) => total + event.attendeeCount, 0)
-  const totalWaitlisted = mappedEvents.reduce((total, event) => total + event.waitlistCount, 0)
   const totalAttended = mappedEvents.reduce((total, event) => total + event.attendedCount, 0)
   const totalDayConfirmed = mappedEvents.reduce(
     (total, event) => total + event.confirmedTodayCount,
@@ -456,7 +495,6 @@ async function fetchEvents(includeArchived: boolean) {
       totalEvents,
       totalFeedback,
       totalNoShows,
-      totalWaitlisted,
     } satisfies AdminAnalyticsSummary,
   }
 }
@@ -509,7 +547,7 @@ async function notifyAttendeesForUpdate(action: UpdateEventAction, event: EventS
     .from('event_signups')
     .select('user_id')
     .eq('event_id', event.id)
-    .in('status', ['going', 'waitlisted'])
+    .eq('status', 'going')
     .returns<{ user_id: string }[]>()
 
   if (error) {
@@ -583,17 +621,17 @@ export async function POST(request: Request) {
 
   const title = body.title?.trim()
   const restaurantId = Number(body.restaurantId)
-  const intent = body.intent
+  const intent: EventIntent = 'friendship'
   const startsAt = body.startsAt
   const description = body.description?.trim() ?? ''
   const capacity = Number(body.capacity ?? 0)
   const durationMinutes = Number(body.durationMinutes ?? 120)
   const minimumViableAttendees = Number(body.minimumViableAttendees ?? 2)
 
-  if (!title || !intent || !startsAt || !Number.isInteger(restaurantId) || restaurantId <= 0) {
+  if (!title || !startsAt || !Number.isInteger(restaurantId) || restaurantId <= 0) {
     return NextResponse.json(
       {
-        error: 'title, intent, startsAt, and restaurantId are required.',
+        error: 'title, startsAt, and restaurantId are required.',
       },
       { status: 400 }
     )
@@ -660,14 +698,40 @@ export async function POST(request: Request) {
         restaurant_subregion: restaurant.subregion,
         starts_at: startsAtDate.toISOString(),
         title,
+        google_good_for_groups: restaurant.google_good_for_groups,
+        google_good_for_watching_sports: restaurant.google_good_for_watching_sports,
+        google_live_music: restaurant.google_live_music,
+        google_open_now: restaurant.google_open_now,
+        google_opening_hours: restaurant.google_opening_hours ?? [],
+        google_outdoor_seating: restaurant.google_outdoor_seating,
+        google_reservable: restaurant.google_reservable,
+        google_serves_beer: restaurant.google_serves_beer,
+        google_serves_brunch: restaurant.google_serves_brunch,
+        google_serves_cocktails: restaurant.google_serves_cocktails,
+        google_serves_dessert: restaurant.google_serves_dessert,
+        google_serves_dinner: restaurant.google_serves_dinner,
+        google_serves_vegetarian_food: restaurant.google_serves_vegetarian_food,
+        google_serves_wine: restaurant.google_serves_wine,
+        menu_experience_tags: restaurant.menu_experience_tags ?? [],
         venue_crowd: normalizeCrowdList(restaurant.venue_crowd),
         venue_energy: normalizeVenueEnergy(restaurant.venue_energy),
+        venue_formats: restaurant.venue_formats ?? [],
+        venue_good_for_casual_meetups: restaurant.venue_good_for_casual_meetups,
+        venue_good_for_cocktails: restaurant.venue_good_for_cocktails,
+        venue_good_for_conversation: restaurant.venue_good_for_conversation,
+        venue_good_for_dinner: restaurant.venue_good_for_dinner,
+        venue_group_friendly: restaurant.venue_group_friendly,
+        venue_indoor_outdoor: restaurant.venue_indoor_outdoor ?? [],
         venue_latitude: restaurant.venue_latitude,
         venue_longitude: restaurant.venue_longitude,
         venue_music: normalizeMusicList(restaurant.venue_music),
+        venue_noise_level: restaurant.venue_noise_level,
         venue_price: normalizeVenuePrice(restaurant.venue_price),
+        venue_reservation_friendly: restaurant.venue_reservation_friendly,
         venue_scene: normalizeSceneList(restaurant.venue_scene),
+        venue_seating_types: restaurant.venue_seating_types ?? [],
         venue_setting: normalizeSettingList(restaurant.venue_setting),
+        venue_vibes: restaurant.venue_vibes ?? [],
         viability_status: 'healthy',
       })
       .select(EVENT_SUMMARY_SELECT)
@@ -683,7 +747,6 @@ export async function POST(request: Request) {
           | 'dropoffCount'
           | 'feedback_count'
           | 'noShowCount'
-          | 'waitlistCount'
           | 'would_join_again_count'
         >
       >()
@@ -705,7 +768,6 @@ export async function POST(request: Request) {
         dropoffCount: 0,
         feedback_count: 0,
         noShowCount: 0,
-        waitlistCount: 0,
         would_join_again_count: 0,
       } satisfies EventSummary,
       ok: true,
@@ -785,9 +847,12 @@ export async function PATCH(request: Request) {
   if (action === 'close') {
     updates.status = 'closed'
   } else if (action === 'archive') {
-    if (!hasEventEnded(currentEvent.starts_at, currentEvent.duration_minutes)) {
+    if (
+      currentEvent.status !== 'cancelled' &&
+      !hasEventEnded(currentEvent.starts_at, currentEvent.duration_minutes)
+    ) {
       return NextResponse.json(
-        { error: 'Only past events can be archived.' },
+        { error: 'Only past or cancelled events can be archived.' },
         { status: 400 }
       )
     }
@@ -817,13 +882,13 @@ export async function PATCH(request: Request) {
   }
 
   if (body.intent) {
-    if (body.intent !== 'dating' && body.intent !== 'friendship') {
+    if (body.intent !== 'friendship') {
       return NextResponse.json(
-        { error: 'intent must be dating or friendship.' },
+        { error: 'intent must be friendship.' },
         { status: 400 }
       )
     }
-    updates.intent = body.intent
+    updates.intent = 'friendship'
   }
 
   if (typeof body.description === 'string') {
@@ -845,14 +910,40 @@ export async function PATCH(request: Request) {
     updates.restaurant_name = restaurant.name
     updates.restaurant_neighbourhood = restaurant.neighbourhood
     updates.restaurant_subregion = restaurant.subregion
+    updates.google_good_for_groups = restaurant.google_good_for_groups
+    updates.google_good_for_watching_sports = restaurant.google_good_for_watching_sports
+    updates.google_live_music = restaurant.google_live_music
+    updates.google_open_now = restaurant.google_open_now
+    updates.google_opening_hours = restaurant.google_opening_hours ?? []
+    updates.google_outdoor_seating = restaurant.google_outdoor_seating
+    updates.google_reservable = restaurant.google_reservable
+    updates.google_serves_beer = restaurant.google_serves_beer
+    updates.google_serves_brunch = restaurant.google_serves_brunch
+    updates.google_serves_cocktails = restaurant.google_serves_cocktails
+    updates.google_serves_dessert = restaurant.google_serves_dessert
+    updates.google_serves_dinner = restaurant.google_serves_dinner
+    updates.google_serves_vegetarian_food = restaurant.google_serves_vegetarian_food
+    updates.google_serves_wine = restaurant.google_serves_wine
+    updates.menu_experience_tags = restaurant.menu_experience_tags ?? []
     updates.venue_crowd = normalizeCrowdList(restaurant.venue_crowd)
     updates.venue_energy = normalizeVenueEnergy(restaurant.venue_energy)
+    updates.venue_formats = restaurant.venue_formats ?? []
+    updates.venue_good_for_casual_meetups = restaurant.venue_good_for_casual_meetups
+    updates.venue_good_for_cocktails = restaurant.venue_good_for_cocktails
+    updates.venue_good_for_conversation = restaurant.venue_good_for_conversation
+    updates.venue_good_for_dinner = restaurant.venue_good_for_dinner
+    updates.venue_group_friendly = restaurant.venue_group_friendly
+    updates.venue_indoor_outdoor = restaurant.venue_indoor_outdoor ?? []
     updates.venue_latitude = restaurant.venue_latitude
     updates.venue_longitude = restaurant.venue_longitude
     updates.venue_music = normalizeMusicList(restaurant.venue_music)
+    updates.venue_noise_level = restaurant.venue_noise_level
     updates.venue_price = normalizeVenuePrice(restaurant.venue_price)
+    updates.venue_reservation_friendly = restaurant.venue_reservation_friendly
     updates.venue_scene = normalizeSceneList(restaurant.venue_scene)
+    updates.venue_seating_types = restaurant.venue_seating_types ?? []
     updates.venue_setting = normalizeSettingList(restaurant.venue_setting)
+    updates.venue_vibes = restaurant.venue_vibes ?? []
   }
 
   if (body.startsAt) {
@@ -949,7 +1040,6 @@ export async function PATCH(request: Request) {
           | 'dropoffCount'
           | 'feedback_count'
           | 'noShowCount'
-          | 'waitlistCount'
           | 'would_join_again_count'
         >
       >()
@@ -970,7 +1060,7 @@ export async function PATCH(request: Request) {
           updated_at: new Date().toISOString(),
         })
         .eq('event_id', updatedEvent.id)
-        .in('status', ['going', 'waitlisted'])
+        .eq('status', 'going')
 
       if (cancelSignupsError) {
         throw new Error(cancelSignupsError.message)
@@ -988,9 +1078,35 @@ export async function PATCH(request: Request) {
       'venue_latitude' in updates ||
       'venue_longitude' in updates ||
       'venue_music' in updates ||
+      'menu_experience_tags' in updates ||
       'venue_price' in updates ||
       'venue_scene' in updates ||
-      'venue_setting' in updates
+      'venue_setting' in updates ||
+      'venue_formats' in updates ||
+      'venue_good_for_casual_meetups' in updates ||
+      'venue_good_for_cocktails' in updates ||
+      'venue_good_for_conversation' in updates ||
+      'venue_good_for_dinner' in updates ||
+      'venue_group_friendly' in updates ||
+      'venue_indoor_outdoor' in updates ||
+      'venue_noise_level' in updates ||
+      'venue_reservation_friendly' in updates ||
+      'venue_seating_types' in updates ||
+      'venue_vibes' in updates ||
+      'google_good_for_groups' in updates ||
+      'google_good_for_watching_sports' in updates ||
+      'google_live_music' in updates ||
+      'google_open_now' in updates ||
+      'google_opening_hours' in updates ||
+      'google_outdoor_seating' in updates ||
+      'google_reservable' in updates ||
+      'google_serves_beer' in updates ||
+      'google_serves_brunch' in updates ||
+      'google_serves_cocktails' in updates ||
+      'google_serves_dessert' in updates ||
+      'google_serves_dinner' in updates ||
+      'google_serves_vegetarian_food' in updates ||
+      'google_serves_wine' in updates
 
     if (shouldRecomputeScores && updatedEvent.status !== 'cancelled') {
       await syncEventSignupScores(adminClient, updatedEvent.id)
@@ -1012,7 +1128,6 @@ export async function PATCH(request: Request) {
         dropoffCount: 0,
         feedback_count: 0,
         noShowCount: 0,
-        waitlistCount: 0,
         would_join_again_count: 0,
       })
     }
@@ -1029,7 +1144,6 @@ export async function PATCH(request: Request) {
         dropoffCount: 0,
         feedback_count: 0,
         noShowCount: 0,
-        waitlistCount: 0,
         would_join_again_count: 0,
       } satisfies EventSummary,
       ok: true,

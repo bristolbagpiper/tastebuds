@@ -17,9 +17,25 @@ type EventRow = {
   capacity: number
   description: string | null
   duration_minutes: number
+  google_good_for_groups: boolean | null
+  google_good_for_watching_sports: boolean | null
+  google_live_music: boolean | null
+  google_open_now: boolean | null
+  google_opening_hours: string[] | null
+  google_outdoor_seating: boolean | null
+  google_reservable: boolean | null
+  google_serves_beer: boolean | null
+  google_serves_brunch: boolean | null
+  google_serves_cocktails: boolean | null
+  google_serves_dessert: boolean | null
+  google_serves_dinner: boolean | null
+  google_serves_vegetarian_food: boolean | null
+  google_serves_wine: boolean | null
   id: number
   intent: 'dating' | 'friendship'
+  menu_experience_tags: string[] | null
   minimum_viable_attendees: number
+  restaurant_id: number | null
   restaurant_cuisines: string[] | null
   restaurant_name: string
   restaurant_neighbourhood: string | null
@@ -29,12 +45,23 @@ type EventRow = {
   title: string
   venue_crowd: string[] | null
   venue_energy: string | null
+  venue_formats: string[] | null
+  venue_good_for_casual_meetups: boolean | null
+  venue_good_for_cocktails: boolean | null
+  venue_good_for_conversation: boolean | null
+  venue_good_for_dinner: boolean | null
+  venue_group_friendly: boolean | null
+  venue_indoor_outdoor: string[] | null
   venue_latitude: number | null
   venue_longitude: number | null
   venue_music: string[] | null
+  venue_noise_level: string | null
   venue_price: string | null
+  venue_reservation_friendly: boolean | null
   venue_scene: string[] | null
+  venue_seating_types: string[] | null
   venue_setting: string[] | null
+  venue_vibes: string[] | null
   viability_status: 'healthy' | 'at_risk' | 'forced_go' | 'cancelled_low_confirmations'
 }
 
@@ -45,14 +72,19 @@ type SignupRow = {
   personal_match_score: number
   personal_match_summary: string | null
   restaurant_match_score: number
-  status: 'going' | 'waitlisted' | 'cancelled' | 'no_show' | 'removed' | 'attended'
+  status: 'going' | 'cancelled' | 'no_show' | 'removed' | 'attended'
   user_id: string
 }
 
 type ProfileRow = {
+  age_range_comfort: string[] | null
   bio: string | null
+  conversation_preference: string[] | null
   cuisine_preferences: string[] | null
   display_name: string | null
+  dietary_restrictions: string[] | null
+  drinking_preferences: string[] | null
+  group_size_comfort: string[] | null
   home_latitude: number | null
   home_longitude: number | null
   id: string
@@ -65,6 +97,7 @@ type ProfileRow = {
   preferred_price: string[] | null
   preferred_scene: string[] | null
   preferred_setting: string[] | null
+  preferred_vibes: string[] | null
   subregion: string | null
 }
 
@@ -75,6 +108,13 @@ type FeedbackRow = {
   user_id: string
   venue_rating: number
   would_join_again: boolean
+}
+
+type RestaurantPlaceRow = {
+  google_place_id: string | null
+  google_rating: number | null
+  google_user_ratings_total: number | null
+  id: number
 }
 
 function parseBearerToken(request: Request) {
@@ -101,7 +141,7 @@ export async function GET(request: Request) {
     const { data: profile, error: profileError } = await adminClient
       .from('profiles')
       .select(
-        'bio, cuisine_preferences, display_name, home_latitude, home_longitude, id, intent, max_travel_minutes, neighbourhood, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, subregion'
+        'age_range_comfort, bio, conversation_preference, cuisine_preferences, dietary_restrictions, display_name, drinking_preferences, group_size_comfort, home_latitude, home_longitude, id, intent, max_travel_minutes, neighbourhood, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, preferred_vibes, subregion'
       )
       .eq('id', user.id)
       .maybeSingle<ProfileRow>()
@@ -133,7 +173,7 @@ export async function GET(request: Request) {
     const { data: events, error: eventsError } = await adminClient
       .from('events')
       .select(
-        'capacity, description, duration_minutes, id, intent, minimum_viable_attendees, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting, viability_status'
+        'capacity, description, duration_minutes, google_good_for_groups, google_good_for_watching_sports, google_live_music, google_open_now, google_opening_hours, google_outdoor_seating, google_reservable, google_serves_beer, google_serves_brunch, google_serves_cocktails, google_serves_dessert, google_serves_dinner, google_serves_vegetarian_food, google_serves_wine, id, intent, menu_experience_tags, minimum_viable_attendees, restaurant_id, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_formats, venue_good_for_casual_meetups, venue_good_for_cocktails, venue_good_for_conversation, venue_good_for_dinner, venue_group_friendly, venue_indoor_outdoor, venue_latitude, venue_longitude, venue_music, venue_noise_level, venue_price, venue_reservation_friendly, venue_scene, venue_seating_types, venue_setting, venue_vibes, viability_status'
       )
       .neq('status', 'cancelled')
       .is('archived_at', null)
@@ -147,6 +187,13 @@ export async function GET(request: Request) {
     }
 
     const eventIds = (events ?? []).map((event) => event.id)
+    const restaurantIds = Array.from(
+      new Set(
+        (events ?? [])
+          .map((event) => event.restaurant_id)
+          .filter((restaurantId): restaurantId is number => restaurantId !== null)
+      )
+    )
 
     if (eventIds.length === 0) {
       return NextResponse.json({
@@ -154,6 +201,18 @@ export async function GET(request: Request) {
         ok: true,
         onboardingRequired: false,
       })
+    }
+
+    const { data: restaurantPlaces, error: restaurantPlacesError } = restaurantIds.length
+      ? await adminClient
+          .from('restaurants')
+          .select('google_place_id, google_rating, google_user_ratings_total, id')
+          .in('id', restaurantIds)
+          .returns<RestaurantPlaceRow[]>()
+      : { data: [], error: null }
+
+    if (restaurantPlacesError) {
+      throw new Error(restaurantPlacesError.message)
     }
 
     const { data: allSignups, error: allSignupsError } = await adminClient
@@ -205,6 +264,9 @@ export async function GET(request: Request) {
         attendeeProfile,
       ])
     )
+    const googlePlaceIdByRestaurantId = new Map(
+      (restaurantPlaces ?? []).map((restaurant) => [restaurant.id, restaurant.google_place_id])
+    )
 
     const attendeeCountByEvent = new Map<number, number>()
     const attendeePreviewByEvent = new Map<
@@ -219,8 +281,6 @@ export async function GET(request: Request) {
     const myFeedbackByEvent = new Map(
       (feedbackRows ?? []).map((feedback) => [feedback.event_id, feedback])
     )
-    const waitlistByEvent = new Map<number, SignupRow[]>()
-
     for (const signup of allSignups ?? []) {
       if (signup.status === 'going') {
         attendeeCountByEvent.set(
@@ -245,21 +305,19 @@ export async function GET(request: Request) {
         ])
       }
 
-      if (signup.status === 'waitlisted') {
-        waitlistByEvent.set(signup.event_id, [
-          ...(waitlistByEvent.get(signup.event_id) ?? []),
-          signup,
-        ])
-      }
-
       if (signup.user_id === user.id) {
         mySignupByEvent.set(signup.event_id, signup)
       }
     }
 
     const scoringProfile: ProfileForScoring = {
+      age_range_comfort: profile.age_range_comfort,
       bio: profile.bio,
+      conversation_preference: profile.conversation_preference,
       cuisine_preferences: profile.cuisine_preferences,
+      dietary_restrictions: profile.dietary_restrictions,
+      drinking_preferences: profile.drinking_preferences,
+      group_size_comfort: profile.group_size_comfort,
       home_latitude: profile.home_latitude,
       home_longitude: profile.home_longitude,
       id: profile.id,
@@ -271,6 +329,7 @@ export async function GET(request: Request) {
       preferred_price: profile.preferred_price,
       preferred_scene: profile.preferred_scene,
       preferred_setting: profile.preferred_setting,
+      preferred_vibes: profile.preferred_vibes,
       subregion: profile.subregion,
     }
 
@@ -279,25 +338,53 @@ export async function GET(request: Request) {
         const confirmedTodayCount = confirmedTodayCountByEvent.get(event.id) ?? 0
         const userSignup = mySignupByEvent.get(event.id)
         const userFeedback = myFeedbackByEvent.get(event.id) ?? null
-        const waitlist = (waitlistByEvent.get(event.id) ?? []).sort((left, right) =>
-          left.created_at.localeCompare(right.created_at)
-        )
-        const waitlistPosition =
-          userSignup?.status === 'waitlisted'
-            ? waitlist.findIndex((signup) => signup.user_id === user.id) + 1
-            : null
         const scoringEvent: EventForScoring = {
+          capacity: event.capacity,
+          google_good_for_groups: event.google_good_for_groups,
+          google_good_for_watching_sports: event.google_good_for_watching_sports,
+          google_live_music: event.google_live_music,
+          google_open_now: event.google_open_now,
+          google_opening_hours: event.google_opening_hours,
+          google_outdoor_seating: event.google_outdoor_seating,
+          google_reservable: event.google_reservable,
+          google_review_count:
+            event.restaurant_id !== null
+              ? (restaurantPlaces?.find((item) => item.id === event.restaurant_id)?.google_user_ratings_total ?? null)
+              : null,
+          google_rating:
+            event.restaurant_id !== null
+              ? (restaurantPlaces?.find((item) => item.id === event.restaurant_id)?.google_rating ?? null)
+              : null,
+          google_serves_beer: event.google_serves_beer,
+          google_serves_brunch: event.google_serves_brunch,
+          google_serves_cocktails: event.google_serves_cocktails,
+          google_serves_dessert: event.google_serves_dessert,
+          google_serves_dinner: event.google_serves_dinner,
+          google_serves_vegetarian_food: event.google_serves_vegetarian_food,
+          google_serves_wine: event.google_serves_wine,
           intent: event.intent,
+          menu_experience_tags: event.menu_experience_tags,
           restaurant_cuisines: event.restaurant_cuisines,
           restaurant_subregion: event.restaurant_subregion,
           venue_crowd: event.venue_crowd,
           venue_energy: event.venue_energy,
+          venue_formats: event.venue_formats,
+          venue_good_for_casual_meetups: event.venue_good_for_casual_meetups,
+          venue_good_for_cocktails: event.venue_good_for_cocktails,
+          venue_good_for_conversation: event.venue_good_for_conversation,
+          venue_good_for_dinner: event.venue_good_for_dinner,
+          venue_group_friendly: event.venue_group_friendly,
+          venue_indoor_outdoor: event.venue_indoor_outdoor,
           venue_latitude: event.venue_latitude,
           venue_longitude: event.venue_longitude,
           venue_music: event.venue_music,
+          venue_noise_level: event.venue_noise_level,
           venue_price: event.venue_price,
+          venue_reservation_friendly: event.venue_reservation_friendly,
           venue_scene: event.venue_scene,
+          venue_seating_types: event.venue_seating_types,
           venue_setting: event.venue_setting,
+          venue_vibes: event.venue_vibes,
         }
         const projectedRestaurantScore =
           userSignup?.restaurant_match_score ??
@@ -338,7 +425,7 @@ export async function GET(request: Request) {
           attendeeCount,
           attendeePreview: (attendeePreviewByEvent.get(event.id) ?? []).slice(0, 8),
           canSubmitFeedback,
-          canViewAttendees: ['going', 'waitlisted', 'attended', 'no_show'].includes(
+          canViewAttendees: ['going', 'attended', 'no_show'].includes(
             userSignup?.status ?? ''
           ),
           confirmedTodayCount,
@@ -359,20 +446,48 @@ export async function GET(request: Request) {
                 wouldJoinAgain: null,
               },
           hasEnded,
-          isJoined: ['going', 'waitlisted'].includes(userSignup?.status ?? ''),
+          google_good_for_groups: event.google_good_for_groups,
+          google_good_for_watching_sports: event.google_good_for_watching_sports,
+          google_live_music: event.google_live_music,
+          google_open_now: event.google_open_now,
+          google_opening_hours: event.google_opening_hours,
+          google_outdoor_seating: event.google_outdoor_seating,
+          google_reservable: event.google_reservable,
+          google_serves_beer: event.google_serves_beer,
+          google_serves_brunch: event.google_serves_brunch,
+          google_serves_cocktails: event.google_serves_cocktails,
+          google_serves_dessert: event.google_serves_dessert,
+          google_serves_dinner: event.google_serves_dinner,
+          google_serves_vegetarian_food: event.google_serves_vegetarian_food,
+          google_serves_wine: event.google_serves_wine,
+          isJoined: userSignup?.status === 'going',
+          menu_experience_tags: event.menu_experience_tags,
           minimumViableAttendees: event.minimum_viable_attendees,
           needsDayOfConfirmation,
           personalMatchScore: userSignup?.personal_match_score ?? null,
           personalMatchSummary: userSignup?.personal_match_summary ?? null,
           projectedRestaurantScore,
+          restaurantGooglePlaceId:
+            event.restaurant_id !== null
+              ? (googlePlaceIdByRestaurantId.get(event.restaurant_id) ?? null)
+              : null,
           venueDistanceKm,
+          venue_formats: event.venue_formats,
+          venue_good_for_casual_meetups: event.venue_good_for_casual_meetups,
+          venue_good_for_cocktails: event.venue_good_for_cocktails,
+          venue_good_for_conversation: event.venue_good_for_conversation,
+          venue_good_for_dinner: event.venue_good_for_dinner,
+          venue_group_friendly: event.venue_group_friendly,
+          venue_indoor_outdoor: event.venue_indoor_outdoor,
           venueMatchSummary: describeVenueMatch(scoringProfile, scoringEvent),
           shouldReconsiderGoing,
           signupStatus: userSignup?.status ?? null,
           spotsLeft: Math.max(0, event.capacity - attendeeCount),
+          venue_noise_level: event.venue_noise_level,
           viabilityStatus: event.viability_status,
-          waitlistCount: waitlist.length,
-          waitlistPosition,
+          venue_reservation_friendly: event.venue_reservation_friendly,
+          venue_seating_types: event.venue_seating_types,
+          venue_vibes: event.venue_vibes,
         }
       })
 

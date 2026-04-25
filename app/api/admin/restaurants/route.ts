@@ -5,17 +5,24 @@ import {
   ENERGY_LEVELS,
   MANHATTAN_SUBREGIONS,
   MUSIC_TAGS,
+  NOISE_LEVEL_TAGS,
   PRICE_TAGS,
   SCENE_TAGS,
   SETTING_TAGS,
   type ManhattanSubregion,
   normalizeCrowdList,
   normalizeCuisineList,
+  normalizeIndoorOutdoorList,
+  normalizeMenuExperienceList,
   normalizeMusicList,
+  normalizeNoiseLevel,
   normalizeSceneList,
+  normalizeSeatingTypeList,
   normalizeSettingList,
   normalizeVenueEnergy,
+  normalizeVenueFormatList,
   normalizeVenuePrice,
+  normalizeVibeList,
 } from '@/lib/events'
 import { requireAdminOrCron } from '@/lib/request-auth'
 import { createServerSupabaseAdminClient } from '@/lib/supabase/server'
@@ -27,25 +34,51 @@ type RestaurantPayload = {
   cuisines?: string[]
   formattedAddress?: string
   googleEditorialSummary?: string
+  googleGoodForGroups?: boolean
+  googleGoodForWatchingSports?: boolean
+  googleLiveMusic?: boolean
   googleMapsUri?: string
+  googleOpenNow?: boolean
+  googleOpeningHours?: string[]
+  googleOutdoorSeating?: boolean
   googlePhoneNumber?: string
   googlePlaceId?: string
   googlePriceLevel?: string
   googleRating?: number
+  googleReservable?: boolean
+  googleServesBeer?: boolean
+  googleServesBrunch?: boolean
+  googleServesCocktails?: boolean
+  googleServesDessert?: boolean
+  googleServesDinner?: boolean
+  googleServesVegetarianFood?: boolean
+  googleServesWine?: boolean
   googleUserRatingsTotal?: number
   googleWebsiteUri?: string
+  menuExperienceTags?: string[]
   name?: string
   neighbourhood?: string
   restaurantId?: number
   subregion?: string
   venueCrowd?: string[]
   venueEnergy?: string
+  venueFormats?: string[]
+  venueGoodForCasualMeetups?: boolean
+  venueGoodForCocktails?: boolean
+  venueGoodForConversation?: boolean
+  venueGoodForDinner?: boolean
+  venueGroupFriendly?: boolean
+  venueIndoorOutdoor?: string[]
   venueLatitude?: number
   venueLongitude?: number
   venueMusic?: string[]
+  venueNoiseLevel?: string
   venuePrice?: string
+  venueReservationFriendly?: boolean
   venueScene?: string[]
+  venueSeatingTypes?: string[]
   venueSetting?: string[]
+  venueVibes?: string[]
 }
 
 type RestaurantSummary = {
@@ -55,30 +88,56 @@ type RestaurantSummary = {
   eventCount: number
   formatted_address: string | null
   google_editorial_summary: string | null
+  google_good_for_groups: boolean | null
+  google_good_for_watching_sports: boolean | null
+  google_live_music: boolean | null
   google_maps_uri: string | null
+  google_open_now: boolean | null
+  google_opening_hours: string[]
+  google_outdoor_seating: boolean | null
   google_phone_number: string | null
   google_place_id: string | null
   google_price_level: string | null
   google_rating: number | null
+  google_reservable: boolean | null
+  google_serves_beer: boolean | null
+  google_serves_brunch: boolean | null
+  google_serves_cocktails: boolean | null
+  google_serves_dessert: boolean | null
+  google_serves_dinner: boolean | null
+  google_serves_vegetarian_food: boolean | null
+  google_serves_wine: boolean | null
   google_user_ratings_total: number | null
   google_website_uri: string | null
   id: number
+  menu_experience_tags: string[]
   name: string
   neighbourhood: string | null
   subregion: ManhattanSubregion
   upcomingEventCount: number
   venue_crowd: string[]
   venue_energy: string | null
+  venue_formats: string[]
+  venue_good_for_casual_meetups: boolean | null
+  venue_good_for_cocktails: boolean | null
+  venue_good_for_conversation: boolean | null
+  venue_good_for_dinner: boolean | null
+  venue_group_friendly: boolean | null
+  venue_indoor_outdoor: string[]
   venue_latitude: number | null
   venue_longitude: number | null
   venue_music: string[]
+  venue_noise_level: string | null
   venue_price: string | null
+  venue_reservation_friendly: boolean | null
   venue_scene: string[]
+  venue_seating_types: string[]
   venue_setting: string[]
+  venue_vibes: string[]
 }
 
 const RESTAURANT_SELECT =
-  'archived_at, created_at, cuisines, formatted_address, google_editorial_summary, google_maps_uri, google_phone_number, google_place_id, google_price_level, google_rating, google_user_ratings_total, google_website_uri, id, name, neighbourhood, subregion, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting'
+  'archived_at, created_at, cuisines, formatted_address, google_editorial_summary, google_good_for_groups, google_good_for_watching_sports, google_live_music, google_maps_uri, google_open_now, google_opening_hours, google_outdoor_seating, google_phone_number, google_place_id, google_price_level, google_rating, google_reservable, google_serves_beer, google_serves_brunch, google_serves_cocktails, google_serves_dessert, google_serves_dinner, google_serves_vegetarian_food, google_serves_wine, google_user_ratings_total, google_website_uri, id, menu_experience_tags, name, neighbourhood, subregion, venue_crowd, venue_energy, venue_formats, venue_good_for_casual_meetups, venue_good_for_cocktails, venue_good_for_conversation, venue_good_for_dinner, venue_group_friendly, venue_indoor_outdoor, venue_latitude, venue_longitude, venue_music, venue_noise_level, venue_price, venue_reservation_friendly, venue_scene, venue_seating_types, venue_setting, venue_vibes'
 
 function isValidSubregion(value: string) {
   return MANHATTAN_SUBREGIONS.includes(value as ManhattanSubregion)
@@ -206,6 +265,12 @@ export async function POST(request: Request) {
   const venueCrowd = normalizeCrowdList(body.venueCrowd ?? [])
   const venueMusic = normalizeMusicList(body.venueMusic ?? [])
   const venueSetting = normalizeSettingList(body.venueSetting ?? [])
+  const venueFormats = normalizeVenueFormatList(body.venueFormats ?? [])
+  const venueIndoorOutdoor = normalizeIndoorOutdoorList(body.venueIndoorOutdoor ?? [])
+  const venueSeatingTypes = normalizeSeatingTypeList(body.venueSeatingTypes ?? [])
+  const venueVibes = normalizeVibeList(body.venueVibes ?? [])
+  const menuExperienceTags = normalizeMenuExperienceList(body.menuExperienceTags ?? [])
+  const venueNoiseLevel = normalizeNoiseLevel(body.venueNoiseLevel)
   const venueLatitude = Number(body.venueLatitude)
   const venueLongitude = Number(body.venueLongitude)
   const googleRating =
@@ -272,24 +337,54 @@ export async function POST(request: Request) {
         cuisines,
         formatted_address: body.formattedAddress?.trim() || null,
         google_editorial_summary: body.googleEditorialSummary?.trim() || null,
+        google_good_for_groups: body.googleGoodForGroups ?? null,
+        google_good_for_watching_sports: body.googleGoodForWatchingSports ?? null,
+        google_live_music: body.googleLiveMusic ?? null,
         google_maps_uri: body.googleMapsUri?.trim() || null,
+        google_open_now: body.googleOpenNow ?? null,
+        google_opening_hours: body.googleOpeningHours ?? [],
+        google_outdoor_seating: body.googleOutdoorSeating ?? null,
         google_phone_number: body.googlePhoneNumber?.trim() || null,
         google_place_id: body.googlePlaceId?.trim() || null,
         google_price_level: body.googlePriceLevel?.trim() || null,
         google_rating: googleRating,
+        google_reservable: body.googleReservable ?? null,
+        google_serves_beer: body.googleServesBeer ?? null,
+        google_serves_brunch: body.googleServesBrunch ?? null,
+        google_serves_cocktails: body.googleServesCocktails ?? null,
+        google_serves_dessert: body.googleServesDessert ?? null,
+        google_serves_dinner: body.googleServesDinner ?? null,
+        google_serves_vegetarian_food: body.googleServesVegetarianFood ?? null,
+        google_serves_wine: body.googleServesWine ?? null,
         google_user_ratings_total: googleUserRatingsTotal,
         google_website_uri: body.googleWebsiteUri?.trim() || null,
+        menu_experience_tags: menuExperienceTags,
         name,
         neighbourhood: neighbourhood || null,
         subregion,
         venue_crowd: venueCrowd,
         venue_energy: venueEnergy,
+        venue_formats: venueFormats,
+        venue_good_for_casual_meetups: body.venueGoodForCasualMeetups ?? null,
+        venue_good_for_cocktails:
+          body.venueGoodForCocktails ?? body.googleServesCocktails ?? null,
+        venue_good_for_conversation: body.venueGoodForConversation ?? null,
+        venue_good_for_dinner:
+          body.venueGoodForDinner ?? body.googleServesDinner ?? null,
+        venue_group_friendly:
+          body.venueGroupFriendly ?? body.googleGoodForGroups ?? null,
+        venue_indoor_outdoor: venueIndoorOutdoor,
         venue_latitude: venueLatitude,
         venue_longitude: venueLongitude,
         venue_music: venueMusic,
+        venue_noise_level: venueNoiseLevel,
         venue_price: venuePrice,
+        venue_reservation_friendly:
+          body.venueReservationFriendly ?? body.googleReservable ?? null,
         venue_scene: venueScene,
+        venue_seating_types: venueSeatingTypes,
         venue_setting: venueSetting,
+        venue_vibes: venueVibes,
       })
       .select(RESTAURANT_SELECT)
       .single<Omit<RestaurantSummary, 'eventCount' | 'upcomingEventCount'>>()
@@ -389,8 +484,32 @@ export async function PATCH(request: Request) {
     updates.google_editorial_summary = body.googleEditorialSummary.trim() || null
   }
 
+  if (typeof body.googleGoodForGroups === 'boolean') {
+    updates.google_good_for_groups = body.googleGoodForGroups
+  }
+
+  if (typeof body.googleGoodForWatchingSports === 'boolean') {
+    updates.google_good_for_watching_sports = body.googleGoodForWatchingSports
+  }
+
+  if (typeof body.googleLiveMusic === 'boolean') {
+    updates.google_live_music = body.googleLiveMusic
+  }
+
   if (typeof body.googleMapsUri === 'string') {
     updates.google_maps_uri = body.googleMapsUri.trim() || null
+  }
+
+  if (typeof body.googleOpenNow === 'boolean') {
+    updates.google_open_now = body.googleOpenNow
+  }
+
+  if (Array.isArray(body.googleOpeningHours)) {
+    updates.google_opening_hours = body.googleOpeningHours.map((value) => value.trim()).filter(Boolean)
+  }
+
+  if (typeof body.googleOutdoorSeating === 'boolean') {
+    updates.google_outdoor_seating = body.googleOutdoorSeating
   }
 
   if (typeof body.googlePhoneNumber === 'string') {
@@ -403,6 +522,38 @@ export async function PATCH(request: Request) {
 
   if (typeof body.googlePriceLevel === 'string') {
     updates.google_price_level = body.googlePriceLevel.trim() || null
+  }
+
+  if (typeof body.googleReservable === 'boolean') {
+    updates.google_reservable = body.googleReservable
+  }
+
+  if (typeof body.googleServesBeer === 'boolean') {
+    updates.google_serves_beer = body.googleServesBeer
+  }
+
+  if (typeof body.googleServesBrunch === 'boolean') {
+    updates.google_serves_brunch = body.googleServesBrunch
+  }
+
+  if (typeof body.googleServesCocktails === 'boolean') {
+    updates.google_serves_cocktails = body.googleServesCocktails
+  }
+
+  if (typeof body.googleServesDessert === 'boolean') {
+    updates.google_serves_dessert = body.googleServesDessert
+  }
+
+  if (typeof body.googleServesDinner === 'boolean') {
+    updates.google_serves_dinner = body.googleServesDinner
+  }
+
+  if (typeof body.googleServesVegetarianFood === 'boolean') {
+    updates.google_serves_vegetarian_food = body.googleServesVegetarianFood
+  }
+
+  if (typeof body.googleServesWine === 'boolean') {
+    updates.google_serves_wine = body.googleServesWine
   }
 
   if (typeof body.googleWebsiteUri === 'string') {
@@ -493,6 +644,61 @@ export async function PATCH(request: Request) {
       )
     }
     updates.venue_setting = nextSetting
+  }
+
+  if (typeof body.venueNoiseLevel === 'string') {
+    const nextNoiseLevel = normalizeNoiseLevel(body.venueNoiseLevel)
+    if (!nextNoiseLevel) {
+      return NextResponse.json(
+        { error: `venueNoiseLevel must be one of ${NOISE_LEVEL_TAGS.join(', ')}.` },
+        { status: 400 }
+      )
+    }
+    updates.venue_noise_level = nextNoiseLevel
+  }
+
+  if (Array.isArray(body.venueSeatingTypes)) {
+    updates.venue_seating_types = normalizeSeatingTypeList(body.venueSeatingTypes)
+  }
+
+  if (Array.isArray(body.venueFormats)) {
+    updates.venue_formats = normalizeVenueFormatList(body.venueFormats)
+  }
+
+  if (Array.isArray(body.venueIndoorOutdoor)) {
+    updates.venue_indoor_outdoor = normalizeIndoorOutdoorList(body.venueIndoorOutdoor)
+  }
+
+  if (Array.isArray(body.venueVibes)) {
+    updates.venue_vibes = normalizeVibeList(body.venueVibes)
+  }
+
+  if (Array.isArray(body.menuExperienceTags)) {
+    updates.menu_experience_tags = normalizeMenuExperienceList(body.menuExperienceTags)
+  }
+
+  if (typeof body.venueReservationFriendly === 'boolean') {
+    updates.venue_reservation_friendly = body.venueReservationFriendly
+  }
+
+  if (typeof body.venueGroupFriendly === 'boolean') {
+    updates.venue_group_friendly = body.venueGroupFriendly
+  }
+
+  if (typeof body.venueGoodForConversation === 'boolean') {
+    updates.venue_good_for_conversation = body.venueGoodForConversation
+  }
+
+  if (typeof body.venueGoodForCocktails === 'boolean') {
+    updates.venue_good_for_cocktails = body.venueGoodForCocktails
+  }
+
+  if (typeof body.venueGoodForDinner === 'boolean') {
+    updates.venue_good_for_dinner = body.venueGoodForDinner
+  }
+
+  if (typeof body.venueGoodForCasualMeetups === 'boolean') {
+    updates.venue_good_for_casual_meetups = body.venueGoodForCasualMeetups
   }
 
   if (typeof body.venueLatitude === 'number') {

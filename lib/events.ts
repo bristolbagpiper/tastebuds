@@ -5,38 +5,132 @@ export const CROWD_TAGS = ['Young', 'Mixed', 'Professional', 'Upscale'] as const
 export const MUSIC_TAGS = ['None', 'Background', 'Live', 'DJ'] as const
 export const SETTING_TAGS = ['Bar', 'Lounge', 'Restaurant', 'Outdoor'] as const
 export const PRICE_TAGS = ['$', '$$', '$$$', '$$$$'] as const
+export const NOISE_LEVEL_TAGS = ['Quiet', 'Moderate', 'Lively'] as const
+export const SEATING_TYPE_TAGS = ['Tables', 'Booths', 'Bar seating', 'Counter', 'Communal'] as const
+export const VENUE_FORMAT_TAGS = ['Bar', 'Restaurant', 'Lounge'] as const
+export const INDOOR_OUTDOOR_TAGS = ['Indoor', 'Outdoor'] as const
+export const VIBE_TAGS = [
+  'Chill',
+  'Social',
+  'Upscale',
+  'Casual',
+  'Trendy',
+  'Cozy',
+  'High-energy',
+  'Date-night',
+  'Foodie',
+  'After-work',
+  'Outdoor',
+  'Live music',
+  'Sports/bar scene',
+] as const
+export const MENU_EXPERIENCE_TAGS = [
+  'Cocktails',
+  'Wine',
+  'Beer',
+  'Small plates',
+  'Full dinner',
+  'Dessert',
+  'Vegan/vegetarian options',
+  'Gluten-free options',
+  'Shareable food',
+  'Brunch',
+  'Late-night food',
+] as const
+export const DRINKING_PREFERENCE_TAGS = [
+  'No alcohol focus',
+  'Cocktails',
+  'Wine',
+  'Beer',
+  'Open to anything',
+] as const
+export const DIETARY_RESTRICTION_TAGS = [
+  'Vegetarian',
+  'Vegan',
+  'Gluten-free',
+  'Pescatarian',
+  'Dairy-free',
+] as const
+export const CONVERSATION_ACTIVITY_TAGS = [
+  'Conversation-first',
+  'Balanced',
+  'Activity-led',
+] as const
+export const AGE_RANGE_COMFORT_TAGS = ['20s', '30s', '40s+', 'Mixed ages'] as const
+export const GROUP_SIZE_COMFORT_TAGS = ['2-4', '4-6', '6-8', '8+'] as const
 
 export type ManhattanSubregion = (typeof MANHATTAN_SUBREGIONS)[number]
 export type EventIntent = 'dating' | 'friendship'
 
 export type VenueMatchBreakdown = {
+  conversation: number
   crowd: number
   cuisine: number
+  dietary: number
+  drinking: number
   energy: number
+  groupSize: number
   location: number
   music: number
   price: number
+  quality: number
   scene: number
   setting: number
+  vibe: number
 }
 
 export type EventForScoring = {
+  capacity?: number | null
+  google_good_for_groups?: boolean | null
+  google_good_for_watching_sports?: boolean | null
+  google_live_music?: boolean | null
+  google_open_now?: boolean | null
+  google_opening_hours?: string[] | null
+  google_outdoor_seating?: boolean | null
+  google_price_level?: string | null
+  google_rating?: number | null
+  google_reservable?: boolean | null
+  google_review_count?: number | null
+  google_serves_beer?: boolean | null
+  google_serves_brunch?: boolean | null
+  google_serves_cocktails?: boolean | null
+  google_serves_dessert?: boolean | null
+  google_serves_dinner?: boolean | null
+  google_serves_vegetarian_food?: boolean | null
+  google_serves_wine?: boolean | null
   intent: EventIntent
+  menu_experience_tags?: string[] | null
   restaurant_cuisines: string[] | null
   restaurant_subregion: string | null
+  venue_formats?: string[] | null
   venue_latitude: number | null
   venue_longitude: number | null
   venue_crowd: string[] | null
   venue_energy: string | null
+  venue_good_for_casual_meetups?: boolean | null
+  venue_good_for_cocktails?: boolean | null
+  venue_good_for_conversation?: boolean | null
+  venue_good_for_dinner?: boolean | null
+  venue_group_friendly?: boolean | null
+  venue_indoor_outdoor?: string[] | null
   venue_music: string[] | null
+  venue_noise_level?: string | null
   venue_price: string | null
+  venue_reservation_friendly?: boolean | null
   venue_scene: string[] | null
+  venue_seating_types?: string[] | null
   venue_setting: string[] | null
+  venue_vibes?: string[] | null
 }
 
 export type ProfileForScoring = {
+  age_range_comfort?: string[] | null
   bio: string | null
   cuisine_preferences: string[] | null
+  conversation_preference?: string[] | null
+  dietary_restrictions?: string[] | null
+  drinking_preferences?: string[] | null
+  group_size_comfort?: string[] | null
   home_latitude: number | null
   home_longitude: number | null
   id: string
@@ -48,6 +142,7 @@ export type ProfileForScoring = {
   preferred_price: string[] | null
   preferred_scene: string[] | null
   preferred_setting: string[] | null
+  preferred_vibes?: string[] | null
   subregion: string | null
 }
 
@@ -153,6 +248,50 @@ export function normalizePriceList(values: string[] | null | undefined) {
   return normalizeCanonicalList(values, PRICE_TAGS)
 }
 
+export function normalizeNoiseLevel(value: string | null | undefined) {
+  return normalizeCanonicalSingle(value, NOISE_LEVEL_TAGS)
+}
+
+export function normalizeSeatingTypeList(values: string[] | null | undefined) {
+  return normalizeCanonicalList(values, SEATING_TYPE_TAGS)
+}
+
+export function normalizeVenueFormatList(values: string[] | null | undefined) {
+  return normalizeCanonicalList(values, VENUE_FORMAT_TAGS)
+}
+
+export function normalizeIndoorOutdoorList(values: string[] | null | undefined) {
+  return normalizeCanonicalList(values, INDOOR_OUTDOOR_TAGS)
+}
+
+export function normalizeVibeList(values: string[] | null | undefined) {
+  return normalizeCanonicalList(values, VIBE_TAGS)
+}
+
+export function normalizeMenuExperienceList(values: string[] | null | undefined) {
+  return normalizeCanonicalList(values, MENU_EXPERIENCE_TAGS)
+}
+
+export function normalizeDrinkingPreferenceList(values: string[] | null | undefined) {
+  return normalizeCanonicalList(values, DRINKING_PREFERENCE_TAGS)
+}
+
+export function normalizeDietaryRestrictionList(values: string[] | null | undefined) {
+  return normalizeCanonicalList(values, DIETARY_RESTRICTION_TAGS)
+}
+
+export function normalizeConversationPreferenceList(values: string[] | null | undefined) {
+  return normalizeCanonicalList(values, CONVERSATION_ACTIVITY_TAGS)
+}
+
+export function normalizeAgeRangeComfortList(values: string[] | null | undefined) {
+  return normalizeCanonicalList(values, AGE_RANGE_COMFORT_TAGS)
+}
+
+export function normalizeGroupSizeComfortList(values: string[] | null | undefined) {
+  return normalizeCanonicalList(values, GROUP_SIZE_COMFORT_TAGS)
+}
+
 export function normalizeVenueEnergy(value: string | null | undefined) {
   return normalizeCanonicalSingle(value, ENERGY_LEVELS)
 }
@@ -220,6 +359,169 @@ function scoreOverlap(
   }
 
   return Math.min(1, overlapCount / Math.min(preferences.length, eventValues.length))
+}
+
+function scoreQuality(rating: number | null | undefined, reviewCount: number | null | undefined) {
+  if (typeof rating !== 'number' || Number.isNaN(rating)) {
+    return 0.5
+  }
+
+  const normalizedRating = Math.max(0, Math.min(1, (rating - 3.5) / 1.5))
+  const normalizedReviewCount =
+    typeof reviewCount === 'number' && reviewCount > 0
+      ? Math.max(0, Math.min(1, Math.log10(reviewCount + 1) / 3))
+      : 0.25
+
+  return Math.max(0, Math.min(1, normalizedRating * 0.75 + normalizedReviewCount * 0.25))
+}
+
+function getVenueVibeTags(event: EventForScoring) {
+  const derived: string[] = [...normalizeVibeList(event.venue_vibes)]
+
+  if (normalizeVenueEnergy(event.venue_energy) === 'Chill') {
+    derived.push('Chill')
+  }
+  if (normalizeVenueEnergy(event.venue_energy) === 'High') {
+    derived.push('High-energy')
+  }
+  if (normalizeIndoorOutdoorList(event.venue_indoor_outdoor).includes('Outdoor') || event.google_outdoor_seating) {
+    derived.push('Outdoor')
+  }
+  if (event.google_live_music || normalizeMusicList(event.venue_music).includes('Live')) {
+    derived.push('Live music')
+  }
+  if (event.google_good_for_watching_sports) {
+    derived.push('Sports/bar scene')
+  }
+  if (event.venue_good_for_casual_meetups) {
+    derived.push('Casual')
+  }
+  if (event.venue_good_for_conversation) {
+    derived.push('Cozy')
+  }
+
+  return normalizeVibeList(derived)
+}
+
+function getVenueDrinkingTags(event: EventForScoring) {
+  const derived: string[] = []
+  const menuTags = normalizeMenuExperienceList(event.menu_experience_tags)
+
+  if (menuTags.includes('Cocktails') || event.google_serves_cocktails || event.venue_good_for_cocktails) {
+    derived.push('Cocktails')
+  }
+  if (menuTags.includes('Wine') || event.google_serves_wine) {
+    derived.push('Wine')
+  }
+  if (menuTags.includes('Beer') || event.google_serves_beer) {
+    derived.push('Beer')
+  }
+
+  return normalizeDrinkingPreferenceList(derived)
+}
+
+function getVenueDietaryTags(event: EventForScoring) {
+  const derived: string[] = []
+  const menuTags = normalizeMenuExperienceList(event.menu_experience_tags)
+
+  if (menuTags.includes('Vegan/vegetarian options') || event.google_serves_vegetarian_food) {
+    derived.push('Vegetarian', 'Vegan')
+  }
+  if (menuTags.includes('Gluten-free options')) {
+    derived.push('Gluten-free')
+  }
+
+  return normalizeDietaryRestrictionList(derived)
+}
+
+function getVenueConversationTags(event: EventForScoring) {
+  const tags: string[] = []
+
+  if (event.venue_good_for_conversation || normalizeNoiseLevel(event.venue_noise_level) === 'Quiet') {
+    tags.push('Conversation-first')
+  }
+
+  if (
+    event.google_live_music ||
+    event.google_good_for_watching_sports ||
+    normalizeVenueEnergy(event.venue_energy) === 'High'
+  ) {
+    tags.push('Activity-led')
+  }
+
+  if (tags.length === 0 || event.venue_good_for_casual_meetups) {
+    tags.push('Balanced')
+  }
+
+  return normalizeConversationPreferenceList(tags)
+}
+
+function getEventGroupSizeTag(event: EventForScoring) {
+  const capacity = event.capacity ?? null
+
+  if (capacity === null || !Number.isFinite(capacity)) {
+    return null
+  }
+
+  if (capacity <= 4) {
+    return '2-4'
+  }
+
+  if (capacity <= 6) {
+    return '4-6'
+  }
+
+  if (capacity <= 8) {
+    return '6-8'
+  }
+
+  return '8+'
+}
+
+function scoreDrinkingPreferences(profile: ProfileForScoring, event: EventForScoring) {
+  const preferences = normalizeDrinkingPreferenceList(profile.drinking_preferences)
+
+  if (preferences.length === 0 || preferences.includes('Open to anything')) {
+    return 0.6
+  }
+
+  if (preferences.includes('No alcohol focus')) {
+    const venueTags = getVenueDrinkingTags(event)
+    return venueTags.length === 0 ? 1 : 0.45
+  }
+
+  return scoreOverlap(preferences, getVenueDrinkingTags(event))
+}
+
+function scoreDietaryPreferences(profile: ProfileForScoring, event: EventForScoring) {
+  const preferences = normalizeDietaryRestrictionList(profile.dietary_restrictions)
+
+  if (preferences.length === 0) {
+    return 0.6
+  }
+
+  return scoreOverlap(preferences, getVenueDietaryTags(event))
+}
+
+function scoreConversationPreferences(profile: ProfileForScoring, event: EventForScoring) {
+  const preferences = normalizeConversationPreferenceList(profile.conversation_preference)
+
+  if (preferences.length === 0) {
+    return 0.55
+  }
+
+  return scoreOverlap(preferences, getVenueConversationTags(event))
+}
+
+function scoreGroupSizePreferences(profile: ProfileForScoring, event: EventForScoring) {
+  const preferences = normalizeGroupSizeComfortList(profile.group_size_comfort)
+  const eventGroupSize = getEventGroupSizeTag(event)
+
+  if (preferences.length === 0 || !eventGroupSize) {
+    return 0.55
+  }
+
+  return preferences.includes(eventGroupSize) ? 1 : 0.25
 }
 
 export function calculateDistanceKm(
@@ -302,6 +604,7 @@ export function buildVenueMatchBreakdown(
   event: EventForScoring
 ): VenueMatchBreakdown {
   return {
+    conversation: scoreConversationPreferences(profile, event),
     crowd: scoreOverlap(
       normalizeCrowdList(profile.preferred_crowd),
       normalizeCrowdList(event.venue_crowd)
@@ -310,11 +613,14 @@ export function buildVenueMatchBreakdown(
       normalizeCuisineList(profile.cuisine_preferences),
       normalizeCuisineList(event.restaurant_cuisines)
     ),
+    dietary: scoreDietaryPreferences(profile, event),
+    drinking: scoreDrinkingPreferences(profile, event),
     energy: scoreOrderedMatch(
       normalizeEnergyList(profile.preferred_energy),
       normalizeVenueEnergy(event.venue_energy),
       ENERGY_LEVELS
     ),
+    groupSize: scoreGroupSizePreferences(profile, event),
     location: scoreLocation(profile, event),
     music: scoreOverlap(
       normalizeMusicList(profile.preferred_music),
@@ -333,6 +639,11 @@ export function buildVenueMatchBreakdown(
       normalizeSettingList(profile.preferred_setting),
       normalizeSettingList(event.venue_setting)
     ),
+    quality: scoreQuality(event.google_rating, event.google_review_count),
+    vibe: scoreOverlap(
+      normalizeVibeList(profile.preferred_vibes),
+      getVenueVibeTags(event)
+    ),
   }
 }
 
@@ -343,10 +654,14 @@ export function describeVenueMatch(
   const breakdown = buildVenueMatchBreakdown(profile, event)
   const strengths = [
     breakdown.energy >= 0.8 ? 'energy' : null,
+    breakdown.vibe >= 0.8 ? 'vibe' : null,
     breakdown.scene >= 0.8 ? 'scene' : null,
     breakdown.price >= 0.8 ? 'price' : null,
     breakdown.crowd >= 0.8 ? 'crowd' : null,
     breakdown.location >= 0.8 ? 'location' : null,
+    breakdown.conversation >= 0.8 ? 'conversation' : null,
+    breakdown.drinking >= 0.8 ? 'drinks' : null,
+    breakdown.dietary >= 0.8 ? 'dietary fit' : null,
     breakdown.setting >= 0.8 ? 'setting' : null,
     breakdown.music >= 0.8 ? 'music' : null,
     breakdown.cuisine >= 0.8 ? 'cuisine' : null,
@@ -354,10 +669,12 @@ export function describeVenueMatch(
 
   const tensions = [
     breakdown.energy <= 0.15 ? 'energy' : null,
+    breakdown.vibe <= 0.15 ? 'vibe' : null,
     breakdown.scene <= 0.15 ? 'scene' : null,
     breakdown.price <= 0.15 ? 'price' : null,
     breakdown.crowd <= 0.15 ? 'crowd' : null,
     breakdown.location <= 0.15 ? 'location' : null,
+    breakdown.conversation <= 0.15 ? 'conversation' : null,
   ].filter(Boolean) as string[]
 
   if (strengths.length >= 2) {
@@ -372,7 +689,7 @@ export function describeVenueMatch(
     return `Weakest alignment: ${tensions.slice(0, 2).join(', ')}.`
   }
 
-  return 'Built from venue mood, crowd, spend, and location fit.'
+  return 'Built from vibe, food, spend, and table fit.'
 }
 
 export function calculateRestaurantMatchScore(
@@ -380,18 +697,23 @@ export function calculateRestaurantMatchScore(
   event: EventForScoring
 ) {
   const breakdown = buildVenueMatchBreakdown(profile, event)
+  const weightedScore =
+    breakdown.energy * 18 +
+    breakdown.vibe * 16 +
+    breakdown.cuisine * 12 +
+    breakdown.price * 10 +
+    breakdown.location * 12 +
+    breakdown.conversation * 10 +
+    breakdown.drinking * 5 +
+    breakdown.dietary * 6 +
+    breakdown.scene * 4 +
+    breakdown.crowd * 3 +
+    breakdown.setting * 3 +
+    breakdown.music * 3 +
+    breakdown.groupSize * 6 +
+    breakdown.quality * 6
 
-  const baseScore =
-    breakdown.energy * 30 +
-    breakdown.scene * 25 +
-    breakdown.price * 15 +
-    breakdown.crowd * 15 +
-    breakdown.location * 15
-
-  const secondaryBonus =
-    breakdown.setting * 4 + breakdown.music * 3 + breakdown.cuisine * 5
-
-  return clampScore(Math.min(100, baseScore + secondaryBonus))
+  return clampScore((weightedScore / 114) * 100)
 }
 
 function scoreAttendeePair(

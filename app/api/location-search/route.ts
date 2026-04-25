@@ -1,18 +1,10 @@
 import { NextResponse } from 'next/server'
 
-import {
-  buildLocationSearchUrl,
-  mapMapboxFeatureToSuggestion,
-} from '@/lib/location-search'
-
-type MapboxSearchResponse = {
-  features?: unknown[]
-  message?: string
-}
+import { searchLocationSuggestions } from '@/lib/location-search'
 
 export async function GET(request: Request) {
   const query = new URL(request.url).searchParams.get('q')?.trim() ?? ''
-  const accessToken = process.env.MAPBOX_ACCESS_TOKEN
+  const accessToken = process.env.GOOGLE_MAPS_API_KEY
 
   if (!accessToken) {
     return NextResponse.json({
@@ -29,28 +21,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const response = await fetch(buildLocationSearchUrl(query, accessToken), {
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-      },
-    })
-    const payload = (await response.json()) as MapboxSearchResponse
-
-    if (!response.ok) {
-      return NextResponse.json(
-        {
-          error: payload.message ?? 'Location search failed.',
-          providerConfigured: true,
-          suggestions: [],
-        },
-        { status: response.status }
-      )
-    }
-
-    const suggestions = (payload.features ?? [])
-      .map((feature) => mapMapboxFeatureToSuggestion(feature as never))
-      .filter((suggestion) => suggestion !== null)
+    const suggestions = await searchLocationSuggestions(query)
 
     return NextResponse.json({
       providerConfigured: true,

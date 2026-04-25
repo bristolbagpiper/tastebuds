@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 
 import {
-  determineActiveSignupStatus,
-  promoteWaitlistedAttendees,
   refreshEventViability,
   syncEventSignupScores,
 } from '@/lib/event-operations'
@@ -135,10 +133,38 @@ export async function PATCH(request: Request) {
           ? 'no_show'
           : action === 'mark-attended'
             ? 'attended'
-            : await determineActiveSignupStatus(adminClient, eventId)
+            : 'going'
+
+    if (action === 'restore') {
+      if (event.status === 'cancelled') {
+        return NextResponse.json(
+          { error: 'You cannot reinstate attendees on a cancelled event.' },
+          { status: 400 }
+        )
+      }
+
+      if (!hasEventStarted(event.starts_at)) {
+        const { count: attendeeCount, error: attendeeCountError } = await adminClient
+          .from('event_signups')
+          .select('*', { count: 'exact', head: true })
+          .eq('event_id', eventId)
+          .eq('status', 'going')
+
+        if (attendeeCountError) {
+          throw new Error(attendeeCountError.message)
+        }
+
+        if ((attendeeCount ?? 0) >= event.capacity) {
+          return NextResponse.json(
+            { error: 'This event is already full. Remove another attendee before restoring.' },
+            { status: 400 }
+          )
+        }
+      }
+    }
 
     const nextDayOfConfirmationStatus =
-      action === 'restore' && ['going', 'waitlisted'].includes(nextStatus)
+      action === 'restore' && nextStatus === 'going'
         ? 'pending'
         : action === 'remove'
           ? 'declined'
@@ -163,15 +189,6 @@ export async function PATCH(request: Request) {
 
     if (signupError) {
       throw new Error(signupError.message)
-    }
-
-    const shouldPromoteWaitlist =
-      action === 'remove' &&
-      !hasEventStarted(event.starts_at) &&
-      event.status === 'open'
-
-    if (shouldPromoteWaitlist) {
-      await promoteWaitlistedAttendees(adminClient, eventId)
     }
 
     await syncEventSignupScores(adminClient, eventId)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { ManhattanSubregion } from '@/lib/events'
 
@@ -40,11 +40,32 @@ export function LocationSearchField({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [providerConfigured, setProviderConfigured] = useState(true)
+  const [searchEnabled, setSearchEnabled] = useState(false)
   const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([])
+  const inputRef = useRef<HTMLInputElement | null>(null)
+  const committedQueryRef = useRef<string | null>(null)
   const trimmedQuery = query.trim()
-  const showSuggestions = providerConfigured && suggestions.length > 0
+  const selectionCommitted =
+    committedQueryRef.current !== null &&
+    trimmedQuery.length > 0 &&
+    trimmedQuery === committedQueryRef.current
+  const showSuggestions = providerConfigured && searchEnabled && suggestions.length > 0
 
   useEffect(() => {
+    if (selectionCommitted) {
+      setLoading(false)
+      setError('')
+      setSuggestions([])
+      return
+    }
+
+    if (!searchEnabled) {
+      setLoading(false)
+      setError('')
+      setSuggestions([])
+      return
+    }
+
     if (trimmedQuery.length < 3) {
       setLoading(false)
       setError('')
@@ -95,11 +116,11 @@ export function LocationSearchField({
       controller.abort()
       window.clearTimeout(timeoutId)
     }
-  }, [trimmedQuery])
+  }, [searchEnabled, selectionCommitted, trimmedQuery])
 
   const helperText = useMemo(() => {
     if (!providerConfigured) {
-      return 'Set MAPBOX_ACCESS_TOKEN on the server to enable address lookup.'
+      return 'Set GOOGLE_MAPS_API_KEY on the server to enable address lookup.'
     }
 
     if (error) {
@@ -110,20 +131,38 @@ export function LocationSearchField({
       return 'Searching Manhattan addresses...'
     }
 
+    if (selectionCommitted) {
+      return description
+    }
+
     if (trimmedQuery.length >= 3 && suggestions.length === 0) {
       return 'No Manhattan matches found. Try a fuller street address or neighborhood.'
     }
 
     return description
-  }, [description, error, loading, providerConfigured, suggestions.length, trimmedQuery.length])
+  }, [description, error, loading, providerConfigured, selectionCommitted, suggestions.length, trimmedQuery.length])
 
   return (
     <div className="space-y-2 sm:col-span-2">
       <span className="text-sm font-medium text-[color:var(--foreground)]">{label}</span>
       <input
         className="tb-input"
-        onChange={(event) => setQuery(event.target.value)}
+        onChange={(event) => {
+          const nextValue = event.target.value
+          const nextTrimmedValue = nextValue.trim()
+
+          if (
+            committedQueryRef.current !== null &&
+            nextTrimmedValue !== committedQueryRef.current
+          ) {
+            committedQueryRef.current = null
+          }
+
+          setSearchEnabled(true)
+          setQuery(nextValue)
+        }}
         placeholder={placeholder}
+        ref={inputRef}
         value={query}
       />
       <p
@@ -138,14 +177,19 @@ export function LocationSearchField({
         {helperText}
       </p>
       {showSuggestions ? (
-        <div className="tb-panel overflow-hidden rounded-3xl">
+        <div className="overflow-hidden rounded-[1.5rem] border border-[color:var(--border-soft)] bg-white shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
           {suggestions.map((suggestion) => (
             <button
-              className="flex w-full items-start justify-between gap-4 border-b border-[color:var(--border-soft)] px-4 py-3 text-left transition last:border-b-0 hover:bg-[color:var(--surface-strong)]"
+              className="flex w-full items-start justify-between gap-4 border-b border-[color:var(--border-soft)] px-4 py-3 text-left transition last:border-b-0 hover:bg-[#f7f5f0]"
               key={`${suggestion.label}:${suggestion.latitude}:${suggestion.longitude}`}
               onClick={() => {
+                committedQueryRef.current = suggestion.label.trim()
                 onPick(suggestion)
+                setLoading(false)
+                setError('')
+                setSearchEnabled(false)
                 setSuggestions([])
+                inputRef.current?.blur()
               }}
               type="button"
             >

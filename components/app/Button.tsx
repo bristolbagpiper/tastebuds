@@ -27,16 +27,16 @@ type ButtonProps = ButtonElementProps | LinkButtonProps
 
 const VARIANT_STYLES = {
   ghost:
-    'border border-transparent bg-transparent text-[color:var(--text-muted)] hover:border-[color:var(--border-soft)] hover:bg-[color:var(--surface)] hover:text-[color:var(--foreground)]',
+    'border border-transparent bg-transparent text-[color:var(--text-muted)] hover:bg-[color:var(--surface-soft)] hover:text-[color:var(--foreground)]',
   primary:
-    'border border-[color:var(--accent)] bg-[color:var(--accent)] text-white shadow-[0_10px_24px_rgba(199,106,74,0.18)] hover:border-[color:var(--accent-strong)] hover:bg-[color:var(--accent-strong)]',
+    'border border-[color:var(--accent)] bg-[color:var(--accent)] text-[color:var(--accent-text)] shadow-[0_10px_20px_rgba(255,215,64,0.32)] hover:border-[color:var(--accent-strong)] hover:bg-[#f0cb37]',
   secondary:
-    'border border-[color:var(--border-soft)] bg-[color:var(--surface)] text-[color:var(--foreground)] hover:border-[color:var(--accent)] hover:bg-[color:var(--surface-strong)]',
+    'border border-[color:var(--border-soft)] bg-[color:var(--surface-soft)] text-[color:var(--foreground)] hover:border-[color:var(--accent)] hover:bg-[color:var(--surface)]',
 } as const
 
 const SIZE_STYLES = {
-  default: 'rounded-2xl px-4 py-2.5 text-sm font-medium',
-  sm: 'rounded-xl px-3 py-2 text-xs font-medium',
+  default: 'rounded-full px-5 py-3 text-sm font-semibold',
+  sm: 'rounded-full px-3.5 py-2 text-xs font-semibold',
 } as const
 
 export function Button({
@@ -47,7 +47,7 @@ export function Button({
   ...props
 }: ButtonProps) {
   const classNames = cx(
-    'inline-flex items-center justify-center transition disabled:cursor-not-allowed disabled:border-[color:var(--border-soft)] disabled:bg-[color:color-mix(in_srgb,var(--surface)_82%,var(--background))] disabled:text-[color:var(--text-muted)]',
+    'inline-flex items-center justify-center gap-2 transition disabled:cursor-not-allowed disabled:border-[color:var(--border-soft)] disabled:bg-[color:color-mix(in_srgb,var(--surface)_82%,var(--background))] disabled:text-[color:var(--text-muted)]',
     SIZE_STYLES[size],
     VARIANT_STYLES[variant],
     className

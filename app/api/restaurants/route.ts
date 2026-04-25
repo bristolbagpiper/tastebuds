@@ -13,9 +13,14 @@ import {
 } from '@/lib/supabase/server'
 
 type ProfileRow = {
+  age_range_comfort: string[] | null
   bio: string | null
+  conversation_preference: string[] | null
   cuisine_preferences: string[] | null
   display_name: string | null
+  dietary_restrictions: string[] | null
+  drinking_preferences: string[] | null
+  group_size_comfort: string[] | null
   home_latitude: number | null
   home_longitude: number | null
   id: string
@@ -28,6 +33,7 @@ type ProfileRow = {
   preferred_price: string[] | null
   preferred_scene: string[] | null
   preferred_setting: string[] | null
+  preferred_vibes: string[] | null
   subregion: string | null
 }
 
@@ -35,23 +41,50 @@ type RestaurantRow = {
   cuisines: string[] | null
   formatted_address: string | null
   google_editorial_summary: string | null
+  google_good_for_groups: boolean | null
+  google_good_for_watching_sports: boolean | null
+  google_live_music: boolean | null
   google_maps_uri: string | null
+  google_open_now: boolean | null
+  google_opening_hours: string[] | null
+  google_outdoor_seating: boolean | null
+  google_place_id: string | null
   google_price_level: string | null
   google_rating: number | null
+  google_reservable: boolean | null
+  google_serves_beer: boolean | null
+  google_serves_brunch: boolean | null
+  google_serves_cocktails: boolean | null
+  google_serves_dessert: boolean | null
+  google_serves_dinner: boolean | null
+  google_serves_vegetarian_food: boolean | null
+  google_serves_wine: boolean | null
   google_user_ratings_total: number | null
   google_website_uri: string | null
   id: number
+  menu_experience_tags: string[] | null
   name: string
   neighbourhood: string | null
   subregion: string
   venue_crowd: string[] | null
   venue_energy: string | null
+  venue_formats: string[] | null
   venue_latitude: number | null
   venue_longitude: number | null
+  venue_good_for_casual_meetups: boolean | null
+  venue_good_for_cocktails: boolean | null
+  venue_good_for_conversation: boolean | null
+  venue_good_for_dinner: boolean | null
+  venue_group_friendly: boolean | null
+  venue_indoor_outdoor: string[] | null
   venue_music: string[] | null
+  venue_noise_level: string | null
   venue_price: string | null
+  venue_reservation_friendly: boolean | null
   venue_scene: string[] | null
+  venue_seating_types: string[] | null
   venue_setting: string[] | null
+  venue_vibes: string[] | null
 }
 
 type EventRow = {
@@ -69,7 +102,7 @@ type SavedRestaurantRow = {
 
 type MySignupRow = {
   event_id: number
-  status: 'going' | 'waitlisted' | 'cancelled' | 'removed' | 'no_show' | 'attended'
+  status: 'going' | 'cancelled' | 'removed' | 'no_show' | 'attended'
 }
 
 function parseBearerToken(request: Request) {
@@ -96,7 +129,7 @@ export async function GET(request: Request) {
     const { data: profile, error: profileError } = await adminClient
       .from('profiles')
       .select(
-        'bio, cuisine_preferences, display_name, home_latitude, home_longitude, id, intent, max_travel_minutes, neighbourhood, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, subregion'
+        'age_range_comfort, bio, conversation_preference, cuisine_preferences, dietary_restrictions, display_name, drinking_preferences, group_size_comfort, home_latitude, home_longitude, id, intent, max_travel_minutes, neighbourhood, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, preferred_vibes, subregion'
       )
       .eq('id', user.id)
       .maybeSingle<ProfileRow>()
@@ -129,7 +162,7 @@ export async function GET(request: Request) {
       adminClient
         .from('restaurants')
         .select(
-          'cuisines, formatted_address, google_editorial_summary, google_maps_uri, google_price_level, google_rating, google_user_ratings_total, google_website_uri, id, name, neighbourhood, subregion, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting'
+          'cuisines, formatted_address, google_editorial_summary, google_good_for_groups, google_good_for_watching_sports, google_live_music, google_maps_uri, google_open_now, google_opening_hours, google_outdoor_seating, google_place_id, google_price_level, google_rating, google_reservable, google_serves_beer, google_serves_brunch, google_serves_cocktails, google_serves_dessert, google_serves_dinner, google_serves_vegetarian_food, google_serves_wine, google_user_ratings_total, google_website_uri, id, menu_experience_tags, name, neighbourhood, subregion, venue_crowd, venue_energy, venue_formats, venue_good_for_casual_meetups, venue_good_for_cocktails, venue_good_for_conversation, venue_good_for_dinner, venue_group_friendly, venue_indoor_outdoor, venue_latitude, venue_longitude, venue_music, venue_noise_level, venue_price, venue_reservation_friendly, venue_scene, venue_seating_types, venue_setting, venue_vibes'
         )
         .is('archived_at', null)
         .order('name', { ascending: true })
@@ -152,7 +185,7 @@ export async function GET(request: Request) {
         .from('event_signups')
         .select('event_id, status')
         .eq('user_id', user.id)
-        .in('status', ['going', 'waitlisted'])
+        .eq('status', 'going')
         .returns<MySignupRow[]>(),
     ])
 
@@ -173,8 +206,13 @@ export async function GET(request: Request) {
     }
 
     const scoringProfile: ProfileForScoring = {
+      age_range_comfort: profile.age_range_comfort,
       bio: profile.bio,
+      conversation_preference: profile.conversation_preference,
       cuisine_preferences: profile.cuisine_preferences,
+      dietary_restrictions: profile.dietary_restrictions,
+      drinking_preferences: profile.drinking_preferences,
+      group_size_comfort: profile.group_size_comfort,
       home_latitude: profile.home_latitude,
       home_longitude: profile.home_longitude,
       id: profile.id,
@@ -186,6 +224,7 @@ export async function GET(request: Request) {
       preferred_price: profile.preferred_price,
       preferred_scene: profile.preferred_scene,
       preferred_setting: profile.preferred_setting,
+      preferred_vibes: profile.preferred_vibes,
       subregion: profile.subregion,
     }
 
@@ -211,17 +250,46 @@ export async function GET(request: Request) {
     const restaurants = (restaurantsResponse.data ?? [])
       .map((restaurant) => {
         const scoringRestaurant: EventForScoring = {
+          google_good_for_groups: restaurant.google_good_for_groups,
+          google_good_for_watching_sports: restaurant.google_good_for_watching_sports,
+          google_live_music: restaurant.google_live_music,
+          google_open_now: restaurant.google_open_now,
+          google_opening_hours: restaurant.google_opening_hours,
+          google_outdoor_seating: restaurant.google_outdoor_seating,
+          google_price_level: restaurant.google_price_level,
+          google_rating: restaurant.google_rating,
+          google_reservable: restaurant.google_reservable,
+          google_review_count: restaurant.google_user_ratings_total,
+          google_serves_beer: restaurant.google_serves_beer,
+          google_serves_brunch: restaurant.google_serves_brunch,
+          google_serves_cocktails: restaurant.google_serves_cocktails,
+          google_serves_dessert: restaurant.google_serves_dessert,
+          google_serves_dinner: restaurant.google_serves_dinner,
+          google_serves_vegetarian_food: restaurant.google_serves_vegetarian_food,
+          google_serves_wine: restaurant.google_serves_wine,
           intent: profile.intent ?? 'friendship',
+          menu_experience_tags: restaurant.menu_experience_tags,
           restaurant_cuisines: restaurant.cuisines,
           restaurant_subregion: restaurant.subregion,
           venue_crowd: restaurant.venue_crowd,
           venue_energy: restaurant.venue_energy,
+          venue_formats: restaurant.venue_formats,
+          venue_good_for_casual_meetups: restaurant.venue_good_for_casual_meetups,
+          venue_good_for_cocktails: restaurant.venue_good_for_cocktails,
+          venue_good_for_conversation: restaurant.venue_good_for_conversation,
+          venue_good_for_dinner: restaurant.venue_good_for_dinner,
+          venue_group_friendly: restaurant.venue_group_friendly,
+          venue_indoor_outdoor: restaurant.venue_indoor_outdoor,
           venue_latitude: restaurant.venue_latitude,
           venue_longitude: restaurant.venue_longitude,
           venue_music: restaurant.venue_music,
+          venue_noise_level: restaurant.venue_noise_level,
           venue_price: restaurant.venue_price,
+          venue_reservation_friendly: restaurant.venue_reservation_friendly,
           venue_scene: restaurant.venue_scene,
+          venue_seating_types: restaurant.venue_seating_types,
           venue_setting: restaurant.venue_setting,
+          venue_vibes: restaurant.venue_vibes,
         }
 
         const availableEvents = (eventsByRestaurantId.get(restaurant.id) ?? [])
@@ -255,26 +323,55 @@ export async function GET(request: Request) {
           availableEventCount: availableEvents.length,
           formattedAddress: restaurant.formatted_address,
           googleEditorialSummary: restaurant.google_editorial_summary,
+          googleGoodForGroups: restaurant.google_good_for_groups,
+          googleGoodForWatchingSports: restaurant.google_good_for_watching_sports,
+          googleLiveMusic: restaurant.google_live_music,
           googleMapsUri: restaurant.google_maps_uri,
+          googleOpenNow: restaurant.google_open_now,
+          googleOpeningHours: restaurant.google_opening_hours,
+          googleOutdoorSeating: restaurant.google_outdoor_seating,
+          googlePlaceId: restaurant.google_place_id,
           googlePriceLevel: restaurant.google_price_level,
           googleRating: restaurant.google_rating,
+          googleReservable: restaurant.google_reservable,
+          googleServesBeer: restaurant.google_serves_beer,
+          googleServesBrunch: restaurant.google_serves_brunch,
+          googleServesCocktails: restaurant.google_serves_cocktails,
+          googleServesDessert: restaurant.google_serves_dessert,
+          googleServesDinner: restaurant.google_serves_dinner,
+          googleServesVegetarianFood: restaurant.google_serves_vegetarian_food,
+          googleServesWine: restaurant.google_serves_wine,
           googleUserRatingsTotal: restaurant.google_user_ratings_total,
           googleWebsiteUri: restaurant.google_website_uri,
           id: restaurant.id,
           isSaved: savedRestaurantIds.has(restaurant.id),
           matchScore: calculateRestaurantMatchScore(scoringProfile, scoringRestaurant),
+          menu_experience_tags: restaurant.menu_experience_tags,
           name: restaurant.name,
           neighbourhood: restaurant.neighbourhood,
           restaurant_cuisines: restaurant.cuisines,
           subregion: restaurant.subregion,
+          venue_latitude: restaurant.venue_latitude,
+          venue_longitude: restaurant.venue_longitude,
           venueDistanceKm,
+          venue_formats: restaurant.venue_formats,
+          venue_good_for_casual_meetups: restaurant.venue_good_for_casual_meetups,
+          venue_good_for_cocktails: restaurant.venue_good_for_cocktails,
+          venue_good_for_conversation: restaurant.venue_good_for_conversation,
+          venue_good_for_dinner: restaurant.venue_good_for_dinner,
+          venue_group_friendly: restaurant.venue_group_friendly,
+          venue_indoor_outdoor: restaurant.venue_indoor_outdoor,
           venueMatchSummary: describeVenueMatch(scoringProfile, scoringRestaurant),
           venue_crowd: restaurant.venue_crowd,
           venue_energy: restaurant.venue_energy,
           venue_music: restaurant.venue_music,
+          venue_noise_level: restaurant.venue_noise_level,
           venue_price: restaurant.venue_price,
+          venue_reservation_friendly: restaurant.venue_reservation_friendly,
           venue_scene: restaurant.venue_scene,
+          venue_seating_types: restaurant.venue_seating_types,
           venue_setting: restaurant.venue_setting,
+          venue_vibes: restaurant.venue_vibes,
         }
       })
       .sort((left, right) => {

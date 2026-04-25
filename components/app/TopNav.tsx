@@ -1,6 +1,7 @@
 import Link from 'next/link'
 
 import { Button } from '@/components/app/Button'
+import { TastebudsLogo } from '@/components/TastebudsLogo'
 import { cx } from '@/lib/app/format'
 
 const NAV_ITEMS = [
@@ -13,53 +14,47 @@ const NAV_ITEMS = [
 
 export function TopNav({
   currentPath,
-  email,
   onLogout,
-  title,
 }: {
   currentPath: string
-  email?: string | null
   onLogout?: () => void
-  title?: string
 }) {
   return (
-    <header className="rounded-[2rem] border border-[color:var(--border-soft)] bg-[color:rgba(255,251,247,0.88)] px-4 py-4 shadow-[0_18px_50px_rgba(94,74,60,0.08)] backdrop-blur sm:px-5 lg:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="tb-label text-xs font-medium uppercase tracking-[0.18em]">Tastebuds</p>
-          <p className="mt-1 text-lg font-semibold text-[color:var(--foreground)]">
-            {title ?? 'Find your next table'}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          {email ? <p className="tb-copy hidden text-sm sm:block">{email}</p> : null}
+    <header className="sticky top-0 z-40 w-full border-b border-stone-200 bg-white/90 backdrop-blur-md shadow-[0_8px_30px_rgb(0,0,0,0.04)]">
+      <div className="mx-auto flex h-20 w-full max-w-7xl items-center justify-between px-6 lg:px-8">
+        <Link className="inline-flex items-center" href="/dashboard">
+          <TastebudsLogo className="translate-y-[1px]" size="sm" />
+        </Link>
+
+        <nav className="hidden items-center gap-8 md:flex">
+          {NAV_ITEMS.map((item) => {
+            const isActive = currentPath === item.href
+
+            return (
+              <Link
+                className={cx(
+                  'pb-1 text-sm tracking-tight transition',
+                  isActive
+                    ? 'border-b-2 border-[#e2a300] font-bold text-[#e2a300]'
+                    : 'font-medium text-stone-500 hover:text-[#e2a300]'
+                )}
+                href={item.href}
+                key={item.href}
+              >
+                {item.label}
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div className="flex items-center gap-2 sm:gap-3">
           {onLogout ? (
-            <Button onClick={onLogout} variant="secondary">
+            <Button className="hidden sm:inline-flex" onClick={onLogout} size="sm" variant="ghost">
               Log out
             </Button>
           ) : null}
         </div>
       </div>
-      <nav className="mt-5 hidden flex-wrap gap-2 sm:flex">
-        {NAV_ITEMS.map((item) => {
-          const isActive = currentPath === item.href
-
-          return (
-            <Link
-              className={cx(
-                'rounded-full px-4 py-2.5 text-sm font-medium transition',
-                isActive
-                  ? 'border border-[color:var(--accent)] bg-[color:var(--accent)] text-white shadow-[0_10px_24px_rgba(199,106,74,0.22)]'
-                  : 'border border-[color:rgba(110,84,67,0.12)] bg-[color:rgba(255,255,255,0.66)] text-[color:var(--text-muted)] hover:border-[color:var(--accent)] hover:bg-[color:rgba(255,255,255,0.92)] hover:text-[color:var(--foreground)]'
-              )}
-              href={item.href}
-              key={item.href}
-            >
-              {item.label}
-            </Link>
-          )
-        })}
-      </nav>
     </header>
   )
 }

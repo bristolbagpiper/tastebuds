@@ -10,25 +10,63 @@ import {
 } from '@/components/location-search-field'
 import { clearAppBootstrapCache, getAppBootstrap } from '@/lib/app/client'
 import {
+  AGE_RANGE_COMFORT_TAGS,
   CROWD_TAGS,
+  CONVERSATION_ACTIVITY_TAGS,
+  DIETARY_RESTRICTION_TAGS,
+  DRINKING_PREFERENCE_TAGS,
   ENERGY_LEVELS,
+  GROUP_SIZE_COMFORT_TAGS,
   MUSIC_TAGS,
   PRICE_TAGS,
   SCENE_TAGS,
   SETTING_TAGS,
+  VIBE_TAGS,
+  normalizeAgeRangeComfortList,
+  normalizeConversationPreferenceList,
   normalizeCrowdList,
+  normalizeDietaryRestrictionList,
+  normalizeDrinkingPreferenceList,
   normalizeEnergyList,
+  normalizeGroupSizeComfortList,
   normalizeMusicList,
   normalizePriceList,
   normalizeSceneList,
   normalizeSettingList,
+  normalizeVibeList,
   parseCuisinePreferenceInput,
 } from '@/lib/events'
 import { supabase } from '@/lib/supabase/client'
 
 const SUBREGIONS = ['Uptown', 'Midtown', 'Downtown'] as const
 const TRAVEL_WINDOWS = [15, 30, 45] as const
-const INTENTS = ['dating', 'friendship'] as const
+
+function normalizeSavedNeighbourhood(value: string | null | undefined) {
+  const normalized = value?.trim() || ''
+
+  if (['manhattan', 'new york', 'new york county'].includes(normalized.toLowerCase())) {
+    return ''
+  }
+
+  return normalized
+}
+
+function getSavedHomeAreaLabel(
+  neighbourhood: string | null | undefined,
+  subregion: string | null | undefined
+) {
+  const normalizedNeighbourhood = normalizeSavedNeighbourhood(neighbourhood)
+
+  if (normalizedNeighbourhood) {
+    return normalizedNeighbourhood
+  }
+
+  if (subregion) {
+    return `${subregion}, Manhattan`
+  }
+
+  return ''
+}
 
 function toggleValue(current: string[], value: string) {
   return current.includes(value)
@@ -51,7 +89,7 @@ function PreferenceGroup({
 }) {
   return (
     <div className="space-y-3">
-      <p className="text-sm font-medium text-[color:var(--foreground)]">{label}</p>
+      <p className="text-sm font-semibold text-[color:var(--foreground)]">{label}</p>
       {description ? <p className="tb-copy text-sm">{description}</p> : null}
       <div className="flex flex-wrap gap-2">
         {options.map((option) => {
@@ -61,8 +99,8 @@ function PreferenceGroup({
             <button
               className={
                 active
-                  ? 'rounded-2xl border border-[color:var(--accent)] bg-[color:var(--accent)] px-3 py-2 text-sm font-medium text-white shadow-[0_10px_24px_rgba(199,106,74,0.18)] transition'
-                  : 'rounded-2xl border border-[color:var(--border-soft)] bg-[color:var(--surface)] px-3 py-2 text-sm font-medium text-[color:var(--text-muted)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--foreground)]'
+                  ? 'rounded-full border border-[color:var(--accent)] bg-[color:var(--accent)] px-3 py-2 text-sm font-semibold text-[color:var(--accent-text)] shadow-[0_10px_20px_rgba(255,215,64,0.3)] transition'
+                  : 'rounded-full border border-[color:var(--border-soft)] bg-white px-3 py-2 text-sm font-medium text-[color:var(--text-muted)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--foreground)]'
               }
               key={option}
               onClick={() => onToggle(option)}
@@ -99,7 +137,6 @@ export function ProfileEditor({
   const [displayName, setDisplayName] = useState('')
   const [subregion, setSubregion] = useState<(typeof SUBREGIONS)[number]>('Midtown')
   const [neighbourhood, setNeighbourhood] = useState('')
-  const [intent, setIntent] = useState<(typeof INTENTS)[number]>('friendship')
   const [maxTravelMinutes, setMaxTravelMinutes] = useState<(typeof TRAVEL_WINDOWS)[number]>(30)
   const [homeAnchorQuery, setHomeAnchorQuery] = useState('')
   const [homeLatitude, setHomeLatitude] = useState('')
@@ -110,6 +147,12 @@ export function ProfileEditor({
   const [preferredMusic, setPreferredMusic] = useState<string[]>([])
   const [preferredSetting, setPreferredSetting] = useState<string[]>([])
   const [preferredPrice, setPreferredPrice] = useState<string[]>([])
+  const [preferredVibes, setPreferredVibes] = useState<string[]>([])
+  const [drinkingPreferences, setDrinkingPreferences] = useState<string[]>([])
+  const [dietaryRestrictions, setDietaryRestrictions] = useState<string[]>([])
+  const [conversationPreference, setConversationPreference] = useState<string[]>([])
+  const [ageRangeComfort, setAgeRangeComfort] = useState<string[]>([])
+  const [groupSizeComfort, setGroupSizeComfort] = useState<string[]>([])
   const [cuisinePreferences, setCuisinePreferences] = useState('')
   const [bio, setBio] = useState('')
   const [loading, setLoading] = useState(true)
@@ -145,13 +188,8 @@ export function ProfileEditor({
             ? (profile.subregion as (typeof SUBREGIONS)[number])
             : 'Midtown'
         )
-        setNeighbourhood(profile.neighbourhood ?? '')
-        setHomeAnchorQuery(profile.neighbourhood ?? '')
-        setIntent(
-          profile.intent && INTENTS.includes(profile.intent as (typeof INTENTS)[number])
-            ? (profile.intent as (typeof INTENTS)[number])
-            : 'friendship'
-        )
+        setNeighbourhood(normalizeSavedNeighbourhood(profile.neighbourhood))
+        setHomeAnchorQuery(getSavedHomeAreaLabel(profile.neighbourhood, profile.subregion))
         setHomeLatitude(
           profile.home_latitude === null || profile.home_latitude === undefined
             ? ''
@@ -174,6 +212,14 @@ export function ProfileEditor({
         setPreferredMusic(normalizeMusicList(profile.preferred_music))
         setPreferredSetting(normalizeSettingList(profile.preferred_setting))
         setPreferredPrice(normalizePriceList(profile.preferred_price))
+        setPreferredVibes(normalizeVibeList(profile.preferred_vibes))
+        setDrinkingPreferences(normalizeDrinkingPreferenceList(profile.drinking_preferences))
+        setDietaryRestrictions(normalizeDietaryRestrictionList(profile.dietary_restrictions))
+        setConversationPreference(
+          normalizeConversationPreferenceList(profile.conversation_preference)
+        )
+        setAgeRangeComfort(normalizeAgeRangeComfortList(profile.age_range_comfort))
+        setGroupSizeComfort(normalizeGroupSizeComfortList(profile.group_size_comfort))
         setCuisinePreferences((profile.cuisine_preferences ?? []).join(', '))
         setBio(profile.bio ?? '')
       }
@@ -227,7 +273,7 @@ export function ProfileEditor({
       parsedHomeLongitude < -180 ||
       parsedHomeLongitude > 180
     ) {
-      setError('Enter a valid latitude and longitude for your home area.')
+      setError('Choose a valid home area from the location search before saving.')
       return
     }
 
@@ -235,14 +281,19 @@ export function ProfileEditor({
     setError('')
 
     const { error: upsertError } = await supabase.from('profiles').upsert({
+      age_range_comfort: ageRangeComfort,
       id: userId,
       bio: bio.trim() || null,
       city: 'New York City',
+      conversation_preference: conversationPreference,
       cuisine_preferences: parseCuisinePreferenceInput(cuisinePreferences),
+      dietary_restrictions: dietaryRestrictions,
       display_name: displayName.trim(),
+      drinking_preferences: drinkingPreferences,
+      group_size_comfort: groupSizeComfort,
       home_latitude: parsedHomeLatitude,
       home_longitude: parsedHomeLongitude,
-      intent,
+      intent: 'friendship',
       max_travel_minutes: maxTravelMinutes,
       neighbourhood: neighbourhood.trim() || null,
       preferred_crowd: preferredCrowd,
@@ -251,6 +302,7 @@ export function ProfileEditor({
       preferred_price: preferredPrice,
       preferred_scene: preferredScene,
       preferred_setting: preferredSetting,
+      preferred_vibes: preferredVibes,
       region: 'Manhattan',
       subregion,
     })
@@ -277,14 +329,16 @@ export function ProfileEditor({
   const content = (
     <>
       <div className="max-w-3xl">
-        <p className="tb-label text-sm font-medium uppercase tracking-[0.2em]">{eyebrow}</p>
-        <h1 className="mt-3 text-4xl font-semibold text-[color:var(--foreground)]">{title}</h1>
+        <p className="tb-label text-sm font-semibold uppercase tracking-[0.2em]">{eyebrow}</p>
+        <h1 className="mt-3 text-[2.5rem] font-bold leading-none tracking-[-0.04em] text-[color:var(--foreground)] sm:text-[3.25rem]">
+          {title}
+        </h1>
         <p className="tb-copy mt-4 max-w-2xl text-base leading-7">{description}</p>
       </div>
 
       <form className="mt-10 space-y-8" onSubmit={handleSave}>
-        <section className="tb-panel-soft rounded-[2rem] p-6">
-          <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Basics</h2>
+        <section className="rounded-[2rem] border border-[color:var(--border-soft)] bg-white p-6 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+          <h2 className="text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">Basics</h2>
           <p className="tb-copy mt-2 text-sm leading-6">
             A few basics so your recommendations feel personal.
           </p>
@@ -300,20 +354,12 @@ export function ProfileEditor({
               />
             </label>
 
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-[color:var(--foreground)]">What are you open to?</span>
-              <select
-                className="tb-input"
-                onChange={(event) => setIntent(event.target.value as (typeof INTENTS)[number])}
-                value={intent}
-              >
-                {INTENTS.map((option) => (
-                  <option key={option} value={option}>
-                    {option[0].toUpperCase() + option.slice(1)}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="block space-y-2">
+              <span className="text-sm font-medium text-[color:var(--foreground)]">Current mode</span>
+              <div className="tb-input flex items-center bg-[color:var(--surface-soft)] text-[color:var(--foreground)]">
+                Friendship
+              </div>
+            </div>
 
             <label className="block space-y-2 sm:col-span-2">
               <span className="text-sm font-medium text-[color:var(--foreground)]">A quick line about your ideal night</span>
@@ -327,8 +373,8 @@ export function ProfileEditor({
           </div>
         </section>
 
-        <section className="tb-panel-soft rounded-[2rem] p-6">
-          <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Location and travel</h2>
+        <section className="rounded-[2rem] border border-[color:var(--border-soft)] bg-white p-6 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+          <h2 className="text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">Location and travel</h2>
           <p className="tb-copy mt-2 text-sm leading-6">
             Use a rough home area so nearby tables are weighted properly.
           </p>
@@ -383,40 +429,11 @@ export function ProfileEditor({
                 ))}
               </select>
             </label>
-
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-[color:var(--foreground)]">Latitude</span>
-              <input
-                className="tb-input"
-                onChange={(event) => setHomeLatitude(event.target.value)}
-                placeholder="40.7306"
-                required
-                step="any"
-                type="number"
-                value={homeLatitude}
-              />
-            </label>
-
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-[color:var(--foreground)]">Longitude</span>
-              <input
-                className="tb-input"
-                onChange={(event) => setHomeLongitude(event.target.value)}
-                placeholder="-73.9866"
-                required
-                step="any"
-                type="number"
-                value={homeLongitude}
-              />
-            </label>
           </div>
-          <p className="tb-label mt-4 text-xs">
-            Use a rough home location, not your exact front door.
-          </p>
         </section>
 
-        <section className="tb-panel-soft rounded-[2rem] p-6">
-          <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Food preferences</h2>
+        <section className="rounded-[2rem] border border-[color:var(--border-soft)] bg-white p-6 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+          <h2 className="text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">Food preferences</h2>
           <p className="tb-copy mt-2 text-sm leading-6">
             Tell us what you actually like eating and what you want to spend.
           </p>
@@ -444,8 +461,8 @@ export function ProfileEditor({
           </div>
         </section>
 
-        <section className="tb-panel-soft rounded-[2rem] p-6">
-          <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Dinner vibe</h2>
+        <section className="rounded-[2rem] border border-[color:var(--border-soft)] bg-white p-6 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+          <h2 className="text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">Dinner vibe</h2>
           <p className="tb-copy mt-2 text-sm leading-6">
             These choices shape the mood of the room more than the menu.
           </p>
@@ -478,11 +495,18 @@ export function ProfileEditor({
               options={SETTING_TAGS}
               selected={preferredSetting}
             />
+            <PreferenceGroup
+              description="The softer, richer feel of the room once food, style and crowd all come together."
+              label="Vibe"
+              onToggle={(value) => setPreferredVibes((current) => toggleValue(current, value))}
+              options={VIBE_TAGS}
+              selected={preferredVibes}
+            />
           </div>
         </section>
 
-        <section className="tb-panel-soft rounded-[2rem] p-6">
-          <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Social preferences</h2>
+        <section className="rounded-[2rem] border border-[color:var(--border-soft)] bg-white p-6 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+          <h2 className="text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">Social preferences</h2>
           <p className="tb-copy mt-2 text-sm leading-6">
             The point is a table that feels comfortable, not just a good address.
           </p>
@@ -493,6 +517,50 @@ export function ProfileEditor({
               onToggle={(value) => setPreferredCrowd((current) => toggleValue(current, value))}
               options={CROWD_TAGS}
               selected={preferredCrowd}
+            />
+            <PreferenceGroup
+              description="Whether the night should be built around conversation or something more active."
+              label="Conversation vs activity"
+              onToggle={(value) => setConversationPreference((current) => toggleValue(current, value))}
+              options={CONVERSATION_ACTIVITY_TAGS}
+              selected={conversationPreference}
+            />
+            <PreferenceGroup
+              description="What kind of table size usually feels right for you."
+              label="Group size comfort"
+              onToggle={(value) => setGroupSizeComfort((current) => toggleValue(current, value))}
+              options={GROUP_SIZE_COMFORT_TAGS}
+              selected={groupSizeComfort}
+            />
+            <PreferenceGroup
+              description="Keep this broad. It should guide recommendations, not create artificial precision."
+              label="Age range comfort"
+              onToggle={(value) => setAgeRangeComfort((current) => toggleValue(current, value))}
+              options={AGE_RANGE_COMFORT_TAGS}
+              selected={ageRangeComfort}
+            />
+          </div>
+        </section>
+
+        <section className="rounded-[2rem] border border-[color:var(--border-soft)] bg-white p-6 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+          <h2 className="text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">Drinks and dietary</h2>
+          <p className="tb-copy mt-2 text-sm leading-6">
+            These preferences help separate a good place from a merely convenient one.
+          </p>
+          <div className="mt-6 grid gap-6">
+            <PreferenceGroup
+              description="Pick what you actually enjoy around the table."
+              label="Drinking preference"
+              onToggle={(value) => setDrinkingPreferences((current) => toggleValue(current, value))}
+              options={DRINKING_PREFERENCE_TAGS}
+              selected={drinkingPreferences}
+            />
+            <PreferenceGroup
+              description="Add any dietary needs that should materially affect the shortlist."
+              label="Dietary restrictions"
+              onToggle={(value) => setDietaryRestrictions((current) => toggleValue(current, value))}
+              options={DIETARY_RESTRICTION_TAGS}
+              selected={dietaryRestrictions}
             />
           </div>
         </section>
@@ -516,8 +584,8 @@ export function ProfileEditor({
   )
 
   return embedded ? (
-    <div className="mx-auto w-full max-w-4xl">{content}</div>
+    <div className="mx-auto w-full max-w-5xl">{content}</div>
   ) : (
-    <main className="mx-auto min-h-screen w-full max-w-4xl px-8 py-16">{content}</main>
+    <main className="mx-auto min-h-screen w-full max-w-5xl px-8 py-16">{content}</main>
   )
 }

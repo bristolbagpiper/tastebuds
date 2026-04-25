@@ -12,10 +12,16 @@ import {
   CROWD_TAGS,
   ENERGY_LEVELS,
   MANHATTAN_SUBREGIONS,
+  MENU_EXPERIENCE_TAGS,
   MUSIC_TAGS,
+  NOISE_LEVEL_TAGS,
   PRICE_TAGS,
   SCENE_TAGS,
+  SEATING_TYPE_TAGS,
   SETTING_TAGS,
+  INDOOR_OUTDOOR_TAGS,
+  VIBE_TAGS,
+  VENUE_FORMAT_TAGS,
   parseCuisinePreferenceInput,
 } from '@/lib/events'
 import { supabase } from '@/lib/supabase/client'
@@ -48,7 +54,6 @@ type AdminEventAttendee = {
     | 'going'
     | 'no_show'
     | 'removed'
-    | 'waitlisted'
   subregion: string | null
   user_id: string
 }
@@ -88,7 +93,6 @@ type AdminEvent = {
   venue_scene: string[]
   venue_setting: string[]
   viability_status: 'healthy' | 'at_risk' | 'forced_go' | 'cancelled_low_confirmations'
-  waitlistCount: number
   would_join_again_count: number
 }
 
@@ -110,7 +114,6 @@ type AdminSummary = {
   totalEvents: number
   totalFeedback: number
   totalNoShows: number
-  totalWaitlisted: number
 }
 
 type AutomationResult = {
@@ -127,26 +130,52 @@ type AdminRestaurant = {
   eventCount: number
   formatted_address: string | null
   google_editorial_summary: string | null
+  google_good_for_groups: boolean | null
+  google_good_for_watching_sports: boolean | null
+  google_live_music: boolean | null
   google_maps_uri: string | null
+  google_open_now: boolean | null
+  google_opening_hours: string[]
+  google_outdoor_seating: boolean | null
   google_phone_number: string | null
   google_place_id: string | null
   google_price_level: string | null
   google_rating: number | null
+  google_reservable: boolean | null
+  google_serves_beer: boolean | null
+  google_serves_brunch: boolean | null
+  google_serves_cocktails: boolean | null
+  google_serves_dessert: boolean | null
+  google_serves_dinner: boolean | null
+  google_serves_vegetarian_food: boolean | null
+  google_serves_wine: boolean | null
   google_user_ratings_total: number | null
   google_website_uri: string | null
   id: number
+  menu_experience_tags: string[]
   name: string
   neighbourhood: string | null
   subregion: (typeof MANHATTAN_SUBREGIONS)[number]
   upcomingEventCount: number
   venue_crowd: string[]
   venue_energy: string | null
+  venue_formats: string[]
+  venue_good_for_casual_meetups: boolean | null
+  venue_good_for_cocktails: boolean | null
+  venue_good_for_conversation: boolean | null
+  venue_good_for_dinner: boolean | null
+  venue_group_friendly: boolean | null
+  venue_indoor_outdoor: string[]
   venue_latitude: number | null
   venue_longitude: number | null
   venue_music: string[]
+  venue_noise_level: string | null
   venue_price: string | null
+  venue_reservation_friendly: boolean | null
   venue_scene: string[]
+  venue_seating_types: string[]
   venue_setting: string[]
+  venue_vibes: string[]
 }
 
 type GooglePoiSuggestion = {
@@ -166,7 +195,19 @@ type GooglePoiSuggestion = {
 
 type GooglePoiDetails = GooglePoiSuggestion & {
   editorialSummary: string | null
+  goodForGroups: boolean | null
+  goodForWatchingSports: boolean | null
+  liveMusic: boolean | null
   openingHours: string[]
+  outdoorSeating: boolean | null
+  reservable: boolean | null
+  servesBeer: boolean | null
+  servesBrunch: boolean | null
+  servesCocktails: boolean | null
+  servesDessert: boolean | null
+  servesDinner: boolean | null
+  servesVegetarianFood: boolean | null
+  servesWine: boolean | null
 }
 
 function toLocalDateTimeInputValue(date: Date) {
@@ -208,16 +249,18 @@ function hasAdminEventEnded(event: Pick<AdminEvent, 'duration_minutes' | 'starts
   )
 }
 
-function formatIntent(intent: EventIntent) {
-  return intent === 'dating' ? 'Dating' : 'Friendship'
+function canManageCancelledEvent(event: Pick<AdminEvent, 'duration_minutes' | 'starts_at' | 'status'>) {
+  return event.status === 'cancelled' || hasAdminEventEnded(event)
+}
+
+function formatIntent() {
+  return 'Friendship'
 }
 
 function formatSignupStatus(status: AdminEventAttendee['signup_status']) {
   switch (status) {
     case 'going':
       return 'Going'
-    case 'waitlisted':
-      return 'Waitlisted'
     case 'attended':
       return 'Attended'
     case 'no_show':
@@ -276,6 +319,164 @@ function toggleValue(current: string[], value: string) {
     : [...current, value]
 }
 
+function deriveVenueNoiseLevel(
+  venueEnergy: string
+): (typeof NOISE_LEVEL_TAGS)[number] {
+  if (venueEnergy === 'Chill') {
+    return 'Quiet'
+  }
+
+  if (venueEnergy === 'High') {
+    return 'Lively'
+  }
+
+  return 'Moderate'
+}
+
+function deriveVenueFormats(venueSetting: string[]) {
+  return venueSetting.filter((value) => ['Bar', 'Restaurant', 'Lounge'].includes(value))
+}
+
+function deriveIndoorOutdoor(venueSetting: string[], googleOutdoorSeating: boolean) {
+  if (venueSetting.includes('Outdoor') || googleOutdoorSeating) {
+    return ['Indoor', 'Outdoor']
+  }
+
+  return ['Indoor']
+}
+
+function deriveVenueVibes({
+  googleLiveMusic,
+  googleOutdoorSeating,
+  googleServesCocktails,
+  googleGoodForWatchingSports,
+  venueEnergy,
+  venueScene,
+}: {
+  googleGoodForWatchingSports: boolean
+  googleLiveMusic: boolean
+  googleOutdoorSeating: boolean
+  googleServesCocktails: boolean
+  venueEnergy: string
+  venueScene: string[]
+}) {
+  const next = new Set<string>()
+
+  if (venueEnergy === 'Chill') next.add('Chill')
+  if (venueEnergy === 'High') next.add('High-energy')
+  if (venueScene.includes('Social')) next.add('Social')
+  if (venueScene.includes('Date')) next.add('Date-night')
+  if (googleOutdoorSeating) next.add('Outdoor')
+  if (googleLiveMusic) next.add('Live music')
+  if (googleGoodForWatchingSports) next.add('Sports/bar scene')
+  if (googleServesCocktails) next.add('After-work')
+
+  return Array.from(next)
+}
+
+function deriveMenuExperienceTags({
+  googleServesBeer,
+  googleServesBrunch,
+  googleServesCocktails,
+  googleServesDessert,
+  googleServesDinner,
+  googleServesVegetarianFood,
+  googleServesWine,
+}: {
+  googleServesBeer: boolean
+  googleServesBrunch: boolean
+  googleServesCocktails: boolean
+  googleServesDessert: boolean
+  googleServesDinner: boolean
+  googleServesVegetarianFood: boolean
+  googleServesWine: boolean
+}) {
+  const next: string[] = []
+
+  if (googleServesCocktails) next.push('Cocktails')
+  if (googleServesWine) next.push('Wine')
+  if (googleServesBeer) next.push('Beer')
+  if (googleServesDinner) next.push('Full dinner')
+  if (googleServesDessert) next.push('Dessert')
+  if (googleServesVegetarianFood) next.push('Vegan/vegetarian options')
+  if (googleServesBrunch) next.push('Brunch')
+
+  return next
+}
+
+function deriveRestaurantAttributes({
+  googleGoodForGroups,
+  googleGoodForWatchingSports,
+  googleLiveMusic,
+  googleOutdoorSeating,
+  googleReservable,
+  googleServesBeer,
+  googleServesBrunch,
+  googleServesCocktails,
+  googleServesDessert,
+  googleServesDinner,
+  googleServesVegetarianFood,
+  googleServesWine,
+  venueEnergy,
+  venueScene,
+  venueSetting,
+}: {
+  googleGoodForGroups: boolean
+  googleGoodForWatchingSports: boolean
+  googleLiveMusic: boolean
+  googleOutdoorSeating: boolean
+  googleReservable: boolean
+  googleServesBeer: boolean
+  googleServesBrunch: boolean
+  googleServesCocktails: boolean
+  googleServesDessert: boolean
+  googleServesDinner: boolean
+  googleServesVegetarianFood: boolean
+  googleServesWine: boolean
+  venueEnergy: string
+  venueScene: string[]
+  venueSetting: string[]
+}) {
+  const venueFormats = deriveVenueFormats(venueSetting)
+
+  return {
+    menuExperienceTags: deriveMenuExperienceTags({
+      googleServesBeer,
+      googleServesBrunch,
+      googleServesCocktails,
+      googleServesDessert,
+      googleServesDinner,
+      googleServesVegetarianFood,
+      googleServesWine,
+    }),
+    venueFormats,
+    venueGoodForCasualMeetups:
+      venueScene.includes('Social') || venueScene.includes('Solo'),
+    venueGoodForCocktails:
+      googleServesCocktails ||
+      venueFormats.includes('Bar') ||
+      venueFormats.includes('Lounge'),
+    venueGoodForConversation:
+      venueEnergy !== 'High' && !googleLiveMusic && !googleGoodForWatchingSports,
+    venueGoodForDinner:
+      googleServesDinner || venueSetting.includes('Restaurant'),
+    venueGroupFriendly:
+      googleGoodForGroups || venueScene.includes('Social'),
+    venueIndoorOutdoor: deriveIndoorOutdoor(venueSetting, googleOutdoorSeating),
+    venueNoiseLevel: deriveVenueNoiseLevel(venueEnergy),
+    venueReservationFriendly: googleReservable,
+    venueSeatingTypes: ['Tables'],
+    venueVibes: deriveVenueVibes({
+      googleGoodForWatchingSports,
+      googleLiveMusic,
+      googleOutdoorSeating,
+      googleServesCocktails,
+      venueEnergy,
+      venueScene,
+    }),
+  }
+}
+
 function TagPicker({
   label,
   options,
@@ -314,6 +515,33 @@ function TagPicker({
   )
 }
 
+function FeatureToggle({
+  checked,
+  description,
+  label,
+  onChange,
+}: {
+  checked: boolean
+  description?: string
+  label: string
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3">
+      <input
+        checked={checked}
+        className="mt-1 h-4 w-4 rounded border-zinc-300 text-zinc-950 focus:ring-zinc-950"
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      <span className="space-y-1">
+        <span className="block text-sm font-medium text-zinc-900">{label}</span>
+        {description ? <span className="block text-xs text-zinc-500">{description}</span> : null}
+      </span>
+    </label>
+  )
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const [email, setEmail] = useState<string | null>(null)
@@ -348,7 +576,7 @@ export default function AdminPage() {
   const [poiResults, setPoiResults] = useState<GooglePoiSuggestion[]>([])
 
   const [title, setTitle] = useState('')
-  const [intent, setIntent] = useState<EventIntent>('dating')
+  const [intent, setIntent] = useState<EventIntent>('friendship')
   const [startsAt, setStartsAt] = useState(getDefaultStartsAt())
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('')
   const [restaurantName, setRestaurantName] = useState('')
@@ -366,6 +594,20 @@ export default function AdminPage() {
   const [googleEditorialSummary, setGoogleEditorialSummary] = useState('')
   const [googlePhoneNumber, setGooglePhoneNumber] = useState('')
   const [googleWebsiteUri, setGoogleWebsiteUri] = useState('')
+  const [googleOpenNow, setGoogleOpenNow] = useState(false)
+  const [googleOpeningHours, setGoogleOpeningHours] = useState<string[]>([])
+  const [googleGoodForGroups, setGoogleGoodForGroups] = useState(false)
+  const [googleGoodForWatchingSports, setGoogleGoodForWatchingSports] = useState(false)
+  const [googleLiveMusic, setGoogleLiveMusic] = useState(false)
+  const [googleOutdoorSeating, setGoogleOutdoorSeating] = useState(false)
+  const [googleReservable, setGoogleReservable] = useState(false)
+  const [googleServesBeer, setGoogleServesBeer] = useState(false)
+  const [googleServesBrunch, setGoogleServesBrunch] = useState(false)
+  const [googleServesCocktails, setGoogleServesCocktails] = useState(false)
+  const [googleServesDessert, setGoogleServesDessert] = useState(false)
+  const [googleServesDinner, setGoogleServesDinner] = useState(false)
+  const [googleServesVegetarianFood, setGoogleServesVegetarianFood] = useState(false)
+  const [googleServesWine, setGoogleServesWine] = useState(false)
   const [venueEnergy, setVenueEnergy] =
     useState<(typeof ENERGY_LEVELS)[number]>('Moderate')
   const [venueLatitude, setVenueLatitude] = useState('')
@@ -375,6 +617,19 @@ export default function AdminPage() {
   const [venueMusic, setVenueMusic] = useState<string[]>(['Background'])
   const [venueSetting, setVenueSetting] = useState<string[]>(['Restaurant'])
   const [venuePrice, setVenuePrice] = useState<(typeof PRICE_TAGS)[number]>('$$')
+  const [venueNoiseLevel, setVenueNoiseLevel] =
+    useState<(typeof NOISE_LEVEL_TAGS)[number]>('Moderate')
+  const [venueSeatingTypes, setVenueSeatingTypes] = useState<string[]>(['Tables'])
+  const [venueFormats, setVenueFormats] = useState<string[]>(['Restaurant'])
+  const [venueIndoorOutdoor, setVenueIndoorOutdoor] = useState<string[]>(['Indoor'])
+  const [venueReservationFriendly, setVenueReservationFriendly] = useState(false)
+  const [venueGroupFriendly, setVenueGroupFriendly] = useState(true)
+  const [venueGoodForConversation, setVenueGoodForConversation] = useState(true)
+  const [venueGoodForCocktails, setVenueGoodForCocktails] = useState(false)
+  const [venueGoodForDinner, setVenueGoodForDinner] = useState(true)
+  const [venueGoodForCasualMeetups, setVenueGoodForCasualMeetups] = useState(true)
+  const [venueVibes, setVenueVibes] = useState<string[]>(['Social'])
+  const [menuExperienceTags, setMenuExperienceTags] = useState<string[]>([])
   const [capacity, setCapacity] = useState('12')
   const [minimumViableAttendees, setMinimumViableAttendees] = useState('2')
   const [durationMinutes, setDurationMinutes] = useState('120')
@@ -539,7 +794,7 @@ export default function AdminPage() {
   function resetEventForm() {
     setEditingEventId(null)
     setTitle('')
-    setIntent('dating')
+    setIntent('friendship')
     setStartsAt(getDefaultStartsAt())
     setSelectedRestaurantId('')
     setCapacity('12')
@@ -553,7 +808,7 @@ export default function AdminPage() {
     setSuccess('')
     setEditingEventId(nextEvent.id)
     setTitle(nextEvent.title)
-    setIntent(nextEvent.intent)
+    setIntent('friendship')
     setStartsAt(toInputDateValue(nextEvent.starts_at))
     setSelectedRestaurantId(nextEvent.restaurant_id ? String(nextEvent.restaurant_id) : '')
     setCapacity(String(nextEvent.capacity))
@@ -563,6 +818,24 @@ export default function AdminPage() {
   }
 
   function resetRestaurantForm() {
+    const derived = deriveRestaurantAttributes({
+      googleGoodForGroups: false,
+      googleGoodForWatchingSports: false,
+      googleLiveMusic: false,
+      googleOutdoorSeating: false,
+      googleReservable: false,
+      googleServesBeer: false,
+      googleServesBrunch: false,
+      googleServesCocktails: false,
+      googleServesDessert: false,
+      googleServesDinner: false,
+      googleServesVegetarianFood: false,
+      googleServesWine: false,
+      venueEnergy: 'Moderate',
+      venueScene: ['Social'],
+      venueSetting: ['Restaurant'],
+    })
+
     setEditingRestaurantId(null)
     setRestaurantName('')
     setRestaurantSubregion('Midtown')
@@ -580,6 +853,20 @@ export default function AdminPage() {
     setGoogleEditorialSummary('')
     setGooglePhoneNumber('')
     setGoogleWebsiteUri('')
+    setGoogleOpenNow(false)
+    setGoogleOpeningHours([])
+    setGoogleGoodForGroups(false)
+    setGoogleGoodForWatchingSports(false)
+    setGoogleLiveMusic(false)
+    setGoogleOutdoorSeating(false)
+    setGoogleReservable(false)
+    setGoogleServesBeer(false)
+    setGoogleServesBrunch(false)
+    setGoogleServesCocktails(false)
+    setGoogleServesDessert(false)
+    setGoogleServesDinner(false)
+    setGoogleServesVegetarianFood(false)
+    setGoogleServesWine(false)
     setVenueEnergy('Moderate')
     setVenueLatitude('')
     setVenueLongitude('')
@@ -588,6 +875,18 @@ export default function AdminPage() {
     setVenueMusic(['Background'])
     setVenueSetting(['Restaurant'])
     setVenuePrice('$$')
+    setVenueNoiseLevel(derived.venueNoiseLevel)
+    setVenueSeatingTypes(derived.venueSeatingTypes)
+    setVenueFormats(derived.venueFormats)
+    setVenueIndoorOutdoor(derived.venueIndoorOutdoor)
+    setVenueReservationFriendly(derived.venueReservationFriendly)
+    setVenueGroupFriendly(derived.venueGroupFriendly)
+    setVenueGoodForConversation(derived.venueGoodForConversation)
+    setVenueGoodForCocktails(derived.venueGoodForCocktails)
+    setVenueGoodForDinner(derived.venueGoodForDinner)
+    setVenueGoodForCasualMeetups(derived.venueGoodForCasualMeetups)
+    setVenueVibes(derived.venueVibes)
+    setMenuExperienceTags(derived.menuExperienceTags)
   }
 
   function loadRestaurantForEdit(restaurant: AdminRestaurant) {
@@ -619,6 +918,20 @@ export default function AdminPage() {
     setGoogleEditorialSummary(restaurant.google_editorial_summary ?? '')
     setGooglePhoneNumber(restaurant.google_phone_number ?? '')
     setGoogleWebsiteUri(restaurant.google_website_uri ?? '')
+    setGoogleOpenNow(restaurant.google_open_now ?? false)
+    setGoogleOpeningHours(restaurant.google_opening_hours ?? [])
+    setGoogleGoodForGroups(restaurant.google_good_for_groups ?? false)
+    setGoogleGoodForWatchingSports(restaurant.google_good_for_watching_sports ?? false)
+    setGoogleLiveMusic(restaurant.google_live_music ?? false)
+    setGoogleOutdoorSeating(restaurant.google_outdoor_seating ?? false)
+    setGoogleReservable(restaurant.google_reservable ?? false)
+    setGoogleServesBeer(restaurant.google_serves_beer ?? false)
+    setGoogleServesBrunch(restaurant.google_serves_brunch ?? false)
+    setGoogleServesCocktails(restaurant.google_serves_cocktails ?? false)
+    setGoogleServesDessert(restaurant.google_serves_dessert ?? false)
+    setGoogleServesDinner(restaurant.google_serves_dinner ?? false)
+    setGoogleServesVegetarianFood(restaurant.google_serves_vegetarian_food ?? false)
+    setGoogleServesWine(restaurant.google_serves_wine ?? false)
     setVenueEnergy(
       (restaurant.venue_energy as (typeof ENERGY_LEVELS)[number] | null) ?? 'Moderate'
     )
@@ -639,6 +952,21 @@ export default function AdminPage() {
     setVenuePrice(
       (restaurant.venue_price as (typeof PRICE_TAGS)[number] | null) ?? '$$'
     )
+    setVenueNoiseLevel(
+      (restaurant.venue_noise_level as (typeof NOISE_LEVEL_TAGS)[number] | null) ??
+        'Moderate'
+    )
+    setVenueSeatingTypes(restaurant.venue_seating_types)
+    setVenueFormats(restaurant.venue_formats)
+    setVenueIndoorOutdoor(restaurant.venue_indoor_outdoor)
+    setVenueReservationFriendly(restaurant.venue_reservation_friendly ?? false)
+    setVenueGroupFriendly(restaurant.venue_group_friendly ?? false)
+    setVenueGoodForConversation(restaurant.venue_good_for_conversation ?? false)
+    setVenueGoodForCocktails(restaurant.venue_good_for_cocktails ?? false)
+    setVenueGoodForDinner(restaurant.venue_good_for_dinner ?? false)
+    setVenueGoodForCasualMeetups(restaurant.venue_good_for_casual_meetups ?? false)
+    setVenueVibes(restaurant.venue_vibes)
+    setMenuExperienceTags(restaurant.menu_experience_tags)
   }
 
   function applyVenueAddressSuggestion(suggestion: LocationSuggestion) {
@@ -738,6 +1066,20 @@ export default function AdminPage() {
     setGoogleEditorialSummary(details.editorialSummary ?? '')
     setGooglePhoneNumber(details.phoneNumber ?? '')
     setGoogleWebsiteUri(details.websiteUri ?? '')
+    setGoogleOpenNow(details.openNow ?? false)
+    setGoogleOpeningHours(details.openingHours ?? [])
+    setGoogleGoodForGroups(details.goodForGroups ?? false)
+    setGoogleGoodForWatchingSports(details.goodForWatchingSports ?? false)
+    setGoogleLiveMusic(details.liveMusic ?? false)
+    setGoogleOutdoorSeating(details.outdoorSeating ?? false)
+    setGoogleReservable(details.reservable ?? false)
+    setGoogleServesBeer(details.servesBeer ?? false)
+    setGoogleServesBrunch(details.servesBrunch ?? false)
+    setGoogleServesCocktails(details.servesCocktails ?? false)
+    setGoogleServesDessert(details.servesDessert ?? false)
+    setGoogleServesDinner(details.servesDinner ?? false)
+    setGoogleServesVegetarianFood(details.servesVegetarianFood ?? false)
+    setGoogleServesWine(details.servesWine ?? false)
     const mappedVenuePrice = mapGooglePriceLevelToVenuePrice(details.priceLevel)
 
     if (mappedVenuePrice) {
@@ -755,6 +1097,37 @@ export default function AdminPage() {
     if (details.formattedAddress) {
       setVenueAddressQuery(details.formattedAddress)
     }
+
+    const derived = deriveRestaurantAttributes({
+      googleGoodForGroups: details.goodForGroups ?? false,
+      googleGoodForWatchingSports: details.goodForWatchingSports ?? false,
+      googleLiveMusic: details.liveMusic ?? false,
+      googleOutdoorSeating: details.outdoorSeating ?? false,
+      googleReservable: details.reservable ?? false,
+      googleServesBeer: details.servesBeer ?? false,
+      googleServesBrunch: details.servesBrunch ?? false,
+      googleServesCocktails: details.servesCocktails ?? false,
+      googleServesDessert: details.servesDessert ?? false,
+      googleServesDinner: details.servesDinner ?? false,
+      googleServesVegetarianFood: details.servesVegetarianFood ?? false,
+      googleServesWine: details.servesWine ?? false,
+      venueEnergy,
+      venueScene,
+      venueSetting,
+    })
+
+    setMenuExperienceTags(derived.menuExperienceTags)
+    setVenueFormats(derived.venueFormats)
+    setVenueGoodForCasualMeetups(derived.venueGoodForCasualMeetups)
+    setVenueGoodForCocktails(derived.venueGoodForCocktails)
+    setVenueGoodForConversation(derived.venueGoodForConversation)
+    setVenueGoodForDinner(derived.venueGoodForDinner)
+    setVenueGroupFriendly(derived.venueGroupFriendly)
+    setVenueIndoorOutdoor(derived.venueIndoorOutdoor)
+    setVenueNoiseLevel(derived.venueNoiseLevel)
+    setVenueReservationFriendly(derived.venueReservationFriendly)
+    setVenueSeatingTypes(derived.venueSeatingTypes)
+    setVenueVibes(derived.venueVibes)
 
     setPoiImportLoadingId(null)
   }
@@ -794,27 +1167,53 @@ export default function AdminPage() {
       cuisines: parseCuisinePreferenceInput(restaurantCuisines),
       formattedAddress,
       googleEditorialSummary,
+      googleGoodForGroups,
+      googleGoodForWatchingSports,
+      googleLiveMusic,
       googleMapsUri,
+      googleOpenNow,
+      googleOpeningHours,
+      googleOutdoorSeating,
       googlePhoneNumber,
       googlePlaceId,
       googlePriceLevel,
       googleRating: googleRating ? Number(googleRating) : null,
+      googleReservable,
+      googleServesBeer,
+      googleServesBrunch,
+      googleServesCocktails,
+      googleServesDessert,
+      googleServesDinner,
+      googleServesVegetarianFood,
+      googleServesWine,
       googleUserRatingsTotal: googleUserRatingsTotal
         ? Number(googleUserRatingsTotal)
         : null,
       googleWebsiteUri,
+      menuExperienceTags,
       name: restaurantName,
       neighbourhood: restaurantNeighbourhood,
       restaurantId: editingRestaurantId,
       subregion: restaurantSubregion,
       venueCrowd,
       venueEnergy,
+      venueFormats,
+      venueGoodForCasualMeetups,
+      venueGoodForCocktails,
+      venueGoodForConversation,
+      venueGoodForDinner,
+      venueGroupFriendly,
+      venueIndoorOutdoor,
       venueLatitude: parsedVenueLatitude,
       venueLongitude: parsedVenueLongitude,
       venueMusic,
+      venueNoiseLevel,
       venuePrice,
+      venueReservationFriendly,
       venueScene,
+      venueSeatingTypes,
       venueSetting,
+      venueVibes,
     }
 
     const response = await fetch('/api/admin/restaurants', {
@@ -1320,12 +1719,12 @@ export default function AdminPage() {
           </div>
           <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
             <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
-              Confirmed / waitlist
+              Confirmed / day confirmed
             </p>
             <p className="mt-2 text-3xl font-semibold text-zinc-950">
-              {summary.totalConfirmed} / {summary.totalWaitlisted}
+              {summary.totalConfirmed} / {summary.totalDayConfirmed}
             </p>
-            <p className="mt-1 text-sm text-zinc-600">Active seats vs queue</p>
+            <p className="mt-1 text-sm text-zinc-600">Active seats vs today&apos;s replies</p>
           </div>
           <div className="rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-5">
             <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
@@ -1587,6 +1986,112 @@ export default function AdminPage() {
             />
           </div>
 
+          <label className="space-y-2">
+            <span className="text-sm font-medium text-zinc-700">Noise level</span>
+            <select
+              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(event) =>
+                setVenueNoiseLevel(event.target.value as (typeof NOISE_LEVEL_TAGS)[number])
+              }
+              value={venueNoiseLevel}
+            >
+              {NOISE_LEVEL_TAGS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="sm:col-span-2">
+            <TagPicker
+              label="Seating types"
+              onToggle={(value) =>
+                setVenueSeatingTypes((current) => toggleValue(current, value))
+              }
+              options={SEATING_TYPE_TAGS}
+              selected={venueSeatingTypes}
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <TagPicker
+              label="Venue formats"
+              onToggle={(value) => setVenueFormats((current) => toggleValue(current, value))}
+              options={VENUE_FORMAT_TAGS}
+              selected={venueFormats}
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <TagPicker
+              label="Indoor / outdoor"
+              onToggle={(value) =>
+                setVenueIndoorOutdoor((current) => toggleValue(current, value))
+              }
+              options={INDOOR_OUTDOOR_TAGS}
+              selected={venueIndoorOutdoor}
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <TagPicker
+              label="Vibe tags"
+              onToggle={(value) => setVenueVibes((current) => toggleValue(current, value))}
+              options={VIBE_TAGS}
+              selected={venueVibes}
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <TagPicker
+              label="Menu / experience tags"
+              onToggle={(value) =>
+                setMenuExperienceTags((current) => toggleValue(current, value))
+              }
+              options={MENU_EXPERIENCE_TAGS}
+              selected={menuExperienceTags}
+            />
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 sm:col-span-2">
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+              Venue fit signals
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <FeatureToggle
+                checked={venueReservationFriendly}
+                label="Reservation-friendly"
+                onChange={setVenueReservationFriendly}
+              />
+              <FeatureToggle
+                checked={venueGroupFriendly}
+                label="Group-friendly"
+                onChange={setVenueGroupFriendly}
+              />
+              <FeatureToggle
+                checked={venueGoodForConversation}
+                label="Good for conversation"
+                onChange={setVenueGoodForConversation}
+              />
+              <FeatureToggle
+                checked={venueGoodForCocktails}
+                label="Good for cocktails"
+                onChange={setVenueGoodForCocktails}
+              />
+              <FeatureToggle
+                checked={venueGoodForDinner}
+                label="Good for dinner"
+                onChange={setVenueGoodForDinner}
+              />
+              <FeatureToggle
+                checked={venueGoodForCasualMeetups}
+                label="Good for casual meetups"
+                onChange={setVenueGoodForCasualMeetups}
+              />
+            </div>
+          </div>
+
           <label className="space-y-2 sm:col-span-2">
             <span className="text-sm font-medium text-zinc-700">Cuisine tags</span>
             <input
@@ -1685,6 +2190,94 @@ export default function AdminPage() {
               value={googleEditorialSummary}
             />
           </label>
+
+          <label className="space-y-2 sm:col-span-2">
+            <span className="text-sm font-medium text-zinc-700">
+              Google opening hours
+            </span>
+            <textarea
+              className="min-h-24 w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
+              onChange={(event) =>
+                setGoogleOpeningHours(
+                  event.target.value
+                    .split('\n')
+                    .map((value) => value.trim())
+                    .filter(Boolean)
+                )
+              }
+              placeholder={'Monday: 5:00 PM - 11:00 PM\nTuesday: 5:00 PM - 11:00 PM'}
+              value={googleOpeningHours.join('\n')}
+            />
+          </label>
+
+          <div className="space-y-3 rounded-2xl border border-zinc-200 bg-white p-4 sm:col-span-2">
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">
+              Google-derived venue signals
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <FeatureToggle checked={googleOpenNow} label="Open now" onChange={setGoogleOpenNow} />
+              <FeatureToggle
+                checked={googleGoodForGroups}
+                label="Good for groups"
+                onChange={setGoogleGoodForGroups}
+              />
+              <FeatureToggle
+                checked={googleGoodForWatchingSports}
+                label="Sports-bar scene"
+                onChange={setGoogleGoodForWatchingSports}
+              />
+              <FeatureToggle
+                checked={googleLiveMusic}
+                label="Live music"
+                onChange={setGoogleLiveMusic}
+              />
+              <FeatureToggle
+                checked={googleOutdoorSeating}
+                label="Outdoor seating"
+                onChange={setGoogleOutdoorSeating}
+              />
+              <FeatureToggle
+                checked={googleReservable}
+                label="Reservable"
+                onChange={setGoogleReservable}
+              />
+              <FeatureToggle
+                checked={googleServesCocktails}
+                label="Serves cocktails"
+                onChange={setGoogleServesCocktails}
+              />
+              <FeatureToggle
+                checked={googleServesWine}
+                label="Serves wine"
+                onChange={setGoogleServesWine}
+              />
+              <FeatureToggle
+                checked={googleServesBeer}
+                label="Serves beer"
+                onChange={setGoogleServesBeer}
+              />
+              <FeatureToggle
+                checked={googleServesDinner}
+                label="Serves dinner"
+                onChange={setGoogleServesDinner}
+              />
+              <FeatureToggle
+                checked={googleServesDessert}
+                label="Serves dessert"
+                onChange={setGoogleServesDessert}
+              />
+              <FeatureToggle
+                checked={googleServesBrunch}
+                label="Serves brunch"
+                onChange={setGoogleServesBrunch}
+              />
+              <FeatureToggle
+                checked={googleServesVegetarianFood}
+                label="Vegetarian options"
+                onChange={setGoogleServesVegetarianFood}
+              />
+            </div>
+          </div>
 
           <div className="flex flex-wrap gap-3 sm:col-span-2">
             <button
@@ -1889,17 +2482,12 @@ export default function AdminPage() {
             />
           </label>
 
-          <label className="space-y-2">
-            <span className="text-sm font-medium text-zinc-700">Intent</span>
-            <select
-              className="w-full rounded-xl border border-zinc-300 px-4 py-3 outline-none transition focus:border-zinc-950"
-              onChange={(nextEvent) => setIntent(nextEvent.target.value as EventIntent)}
-              value={intent}
-            >
-              <option value="dating">Dating</option>
-              <option value="friendship">Friendship</option>
-            </select>
-          </label>
+          <div className="space-y-2">
+            <span className="text-sm font-medium text-zinc-700">Mode</span>
+            <div className="w-full rounded-xl border border-zinc-300 bg-zinc-50 px-4 py-3 text-zinc-950">
+              Friendship
+            </div>
+          </div>
 
           <label className="space-y-2">
             <span className="text-sm font-medium text-zinc-700">Starts at</span>
@@ -2014,7 +2602,7 @@ export default function AdminPage() {
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
                     <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-                      {formatIntent(event.intent)}
+                      {formatIntent()}
                     </p>
                     <h3 className="mt-2 text-2xl font-semibold text-zinc-950">
                       {event.title}
@@ -2069,10 +2657,6 @@ export default function AdminPage() {
                       </span>
                     </p>
                     <p className="mt-1">
-                      Waitlist:{' '}
-                      <span className="font-medium text-zinc-950">{event.waitlistCount}</span>
-                    </p>
-                    <p className="mt-1">
                       Today confirmed:{' '}
                       <span className="font-medium text-zinc-950">
                         {event.confirmedTodayCount}/{event.minimum_viable_attendees}
@@ -2104,14 +2688,6 @@ export default function AdminPage() {
                     </p>
                     <p className="mt-2 text-2xl font-semibold text-zinc-950">
                       {event.attendeeCount}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
-                    <p className="text-xs uppercase tracking-[0.12em] text-zinc-500">
-                      Waitlist
-                    </p>
-                    <p className="mt-2 text-2xl font-semibold text-zinc-950">
-                      {event.waitlistCount}
                     </p>
                   </div>
                   <div className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-700">
@@ -2208,7 +2784,7 @@ export default function AdminPage() {
                       {eventActionLoadingId === event.id ? 'Working...' : 'Reopen'}
                     </button>
                   )}
-                  {hasAdminEventEnded(event) ? (
+                  {canManageCancelledEvent(event) ? (
                     event.archived_at ? (
                       <button
                         className="rounded-xl border border-zinc-950 px-3 py-2 text-xs font-medium text-zinc-950 transition hover:bg-zinc-950 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
@@ -2231,7 +2807,7 @@ export default function AdminPage() {
                       </button>
                     )
                   ) : null}
-                  {hasAdminEventEnded(event) ? (
+                  {canManageCancelledEvent(event) ? (
                     <button
                       className="rounded-xl border border-red-300 px-3 py-2 text-xs font-medium text-red-700 transition hover:bg-red-600 hover:text-white disabled:cursor-not-allowed disabled:border-zinc-300 disabled:text-zinc-400"
                       disabled={eventActionLoadingId === event.id}
@@ -2313,7 +2889,7 @@ export default function AdminPage() {
                             </p>
                           ) : null}
                           <div className="mt-3 flex flex-wrap gap-2">
-                            {['going', 'waitlisted'].includes(attendee.signup_status) ? (
+                            {attendee.signup_status === 'going' ? (
                               <>
                                 {hasEventStarted(event.starts_at) ? (
                                   attendee.signup_status === 'going' ? (

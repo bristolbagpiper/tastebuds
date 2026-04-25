@@ -1,15 +1,11 @@
 import 'server-only'
 
 import {
-  calculateRestaurantMatchScore,
-  type EventForScoring,
   type EventIntent,
-  type ProfileForScoring,
 } from '@/lib/events'
 import {
   getHoursUntilEvent,
   hasEventStarted,
-  isPastWaitlistPromotionCutoff,
   isSameEventDayInNewYork,
 } from '@/lib/event-time'
 import { recomputeEventSignupScores } from '@/lib/event-signups'
@@ -49,44 +45,8 @@ type EventScoreRow = {
 type SignupScoreRow = {
   created_at: string
   day_of_confirmation_status: 'pending' | 'confirmed' | 'declined'
-  status: 'going' | 'waitlisted' | 'cancelled' | 'removed' | 'no_show' | 'attended'
+  status: 'going' | 'cancelled' | 'removed' | 'no_show' | 'attended'
   user_id: string
-}
-
-type ProfileRow = {
-  bio: string | null
-  cuisine_preferences: string[] | null
-  home_latitude: number | null
-  home_longitude: number | null
-  id: string
-  intent: EventIntent | null
-  max_travel_minutes: number | null
-  preferred_crowd: string[] | null
-  preferred_energy: string[] | null
-  preferred_music: string[] | null
-  preferred_price: string[] | null
-  preferred_scene: string[] | null
-  preferred_setting: string[] | null
-  subregion: string | null
-}
-
-function toScoringProfile(profile: ProfileRow | undefined, userId: string): ProfileForScoring {
-  return {
-    bio: profile?.bio ?? null,
-    cuisine_preferences: profile?.cuisine_preferences ?? [],
-    home_latitude: profile?.home_latitude ?? null,
-    home_longitude: profile?.home_longitude ?? null,
-    id: userId,
-    intent: profile?.intent ?? null,
-    max_travel_minutes: profile?.max_travel_minutes ?? null,
-    preferred_crowd: profile?.preferred_crowd ?? [],
-    preferred_energy: profile?.preferred_energy ?? [],
-    preferred_music: profile?.preferred_music ?? [],
-    preferred_price: profile?.preferred_price ?? [],
-    preferred_scene: profile?.preferred_scene ?? [],
-    preferred_setting: profile?.preferred_setting ?? [],
-    subregion: profile?.subregion ?? null,
-  }
 }
 
 async function getEventForScoring(adminClient: AdminClient, eventId: number) {
@@ -103,26 +63,6 @@ async function getEventForScoring(adminClient: AdminClient, eventId: number) {
   }
 
   return event
-}
-
-async function getProfiles(adminClient: AdminClient, userIds: string[]) {
-  if (userIds.length === 0) {
-    return new Map<string, ProfileRow>()
-  }
-
-  const { data, error } = await adminClient
-    .from('profiles')
-    .select(
-      'bio, cuisine_preferences, home_latitude, home_longitude, id, intent, max_travel_minutes, preferred_crowd, preferred_energy, preferred_music, preferred_price, preferred_scene, preferred_setting, subregion'
-    )
-    .in('id', userIds)
-    .returns<ProfileRow[]>()
-
-  if (error) {
-    throw new Error(error.message)
-  }
-
-  return new Map((data ?? []).map((profile) => [profile.id, profile]))
 }
 
 async function getSignupRows(adminClient: AdminClient, eventId: number) {
@@ -143,59 +83,7 @@ export async function syncEventSignupScores(
   adminClient: AdminClient,
   eventId: number
 ) {
-  const event = await getEventForScoring(adminClient, eventId)
-
   await recomputeEventSignupScores(adminClient, eventId)
-
-  const waitlisted = (await getSignupRows(adminClient, eventId)).filter(
-    (signup) => signup.status === 'waitlisted'
-  )
-
-  if (waitlisted.length === 0) {
-    return
-  }
-
-  const profileById = await getProfiles(
-    adminClient,
-    waitlisted.map((signup) => signup.user_id)
-  )
-  const scoringEvent: EventForScoring = {
-    intent: event.intent,
-    restaurant_cuisines: event.restaurant_cuisines,
-    restaurant_subregion: event.restaurant_subregion,
-    venue_crowd: event.venue_crowd,
-    venue_energy: event.venue_energy,
-    venue_latitude: event.venue_latitude,
-    venue_longitude: event.venue_longitude,
-    venue_music: event.venue_music,
-    venue_price: event.venue_price,
-    venue_scene: event.venue_scene,
-    venue_setting: event.venue_setting,
-  }
-  const nowIso = new Date().toISOString()
-
-  const updates = waitlisted.map((signup, index) => ({
-    day_of_confirmation_at: null,
-    day_of_confirmation_status: 'pending',
-    event_id: eventId,
-    personal_match_score: 50,
-    personal_match_summary: `You are currently waitlisted at position ${index + 1}. Personal fit will lock in if a seat opens.`,
-    restaurant_match_score: calculateRestaurantMatchScore(
-      toScoringProfile(profileById.get(signup.user_id), signup.user_id),
-      scoringEvent
-    ),
-    status: 'waitlisted',
-    updated_at: nowIso,
-    user_id: signup.user_id,
-  }))
-
-  const { error: updateError } = await adminClient.from('event_signups').upsert(updates, {
-    onConflict: 'event_id,user_id',
-  })
-
-  if (updateError) {
-    throw new Error(updateError.message)
-  }
 }
 
 export async function refreshEventViability(
@@ -289,95 +177,6 @@ export async function refreshUpcomingEventViability(adminClient: AdminClient) {
   }
 
   return { atRiskEvents }
-}
-
-export async function promoteWaitlistedAttendees(
-  adminClient: AdminClient,
-  eventId: number
-) {
-  const event = await getEventForScoring(adminClient, eventId)
-
-  if (
-    event.status !== 'open' ||
-    hasEventStarted(event.starts_at) ||
-    isPastWaitlistPromotionCutoff(event.starts_at)
-  ) {
-    return { promotedUserIds: [] as string[] }
-  }
-
-  const attendeeCount = (await getSignupRows(adminClient, eventId)).filter(
-    (signup) => signup.status === 'going'
-  ).length
-
-  const openSpots = Math.max(0, event.capacity - attendeeCount)
-
-  if (openSpots === 0) {
-    return { promotedUserIds: [] as string[] }
-  }
-
-  const waitlisted = (await getSignupRows(adminClient, eventId))
-    .filter((signup) => signup.status === 'waitlisted')
-    .sort((left, right) => left.created_at.localeCompare(right.created_at))
-    .slice(0, openSpots)
-
-  const promotedUserIds = waitlisted.map((signup) => signup.user_id)
-
-  if (promotedUserIds.length === 0) {
-    return { promotedUserIds: [] as string[] }
-  }
-
-  const { error: promoteError } = await adminClient
-    .from('event_signups')
-    .update({
-      day_of_confirmation_at: null,
-      day_of_confirmation_status: 'pending',
-      status: 'going',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('event_id', eventId)
-    .eq('status', 'waitlisted')
-    .in('user_id', promotedUserIds)
-
-  if (promoteError) {
-    throw new Error(promoteError.message)
-  }
-
-  await syncEventSignupScores(adminClient, eventId)
-  await refreshEventViability(adminClient, eventId)
-
-  await queueNotifications(
-    promotedUserIds.map((userId) => ({
-      body: `A spot just opened up for ${event.title} at ${event.restaurant_name}. You have been moved off the waitlist and are now confirmed.`,
-      duplicateBehavior: 'skip',
-      eventId: event.id,
-      title: 'You are off the waitlist',
-      type: 'event_promoted',
-      userId,
-    }))
-  )
-
-  return { promotedUserIds }
-}
-
-export async function determineActiveSignupStatus(
-  adminClient: AdminClient,
-  eventId: number
-) {
-  const event = await getEventForScoring(adminClient, eventId)
-
-  if (event.status === 'cancelled') {
-    throw new Error('You cannot reinstate attendees on a cancelled event.')
-  }
-
-  if (hasEventStarted(event.starts_at)) {
-    return 'going' as const
-  }
-
-  const attendeeCount = (await getSignupRows(adminClient, eventId)).filter(
-    (signup) => signup.status === 'going'
-  ).length
-
-  return attendeeCount >= event.capacity ? ('waitlisted' as const) : ('going' as const)
 }
 
 export async function queueDueEventNotifications(adminClient: AdminClient) {

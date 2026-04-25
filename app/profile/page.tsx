@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 
 import { AppShell } from '@/components/app/AppShell'
 import { ProfileEditor } from '@/components/app/ProfileEditor'
@@ -9,18 +9,13 @@ import { getAppBootstrap, logout } from '@/lib/app/client'
 
 export default function ProfilePage() {
   const router = useRouter()
-  const [email, setEmail] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
 
     async function loadPage() {
       try {
-        const bootstrap = await getAppBootstrap()
-
-        if (active) {
-          setEmail(bootstrap.email)
-        }
+        await getAppBootstrap()
       } catch {
         if (active) {
           router.replace('/login')
@@ -41,11 +36,11 @@ export default function ProfilePage() {
   }
 
   return (
-    <AppShell currentPath="/profile" email={email} onLogout={handleLogout} title="Profile">
+    <AppShell currentPath="/profile" onLogout={handleLogout}>
       <ProfileEditor
         backHref="/dashboard"
         backLabel="Back to home"
-        description="Shape the places and dinners you see around the city."
+        description="Shape the restaurants and tables that rise to the top for you."
         embedded
         eyebrow="Profile"
         redirectTo="/profile"

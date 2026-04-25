@@ -1,40 +1,42 @@
 'use client'
 
+/* eslint-disable @next/next/no-img-element */
+
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 
-import { ActionCard } from '@/components/app/ActionCard'
 import { AppShell } from '@/components/app/AppShell'
 import { Button } from '@/components/app/Button'
-import { EmptyState } from '@/components/app/EmptyState'
-import { EventCard } from '@/components/app/EventCard'
-import { PageHeader } from '@/components/app/PageHeader'
-import { RestaurantCard } from '@/components/app/RestaurantCard'
+import { HomeEventTile } from '@/components/app/HomeEventTile'
+import { SavedSpotsMap } from '@/components/app/SavedSpotsMap'
+import { SavedRestaurantTile } from '@/components/app/SavedRestaurantTile'
 import {
   fetchEvents,
   fetchNotifications,
   fetchRestaurants,
   getAppBootstrap,
   logout,
-  setEventSignup,
-  setSavedRestaurant,
 } from '@/lib/app/client'
 import { isProfileComplete } from '@/lib/app/format'
-import type { DashboardEvent, DashboardRestaurant, NotificationSummary, Profile } from '@/lib/app/types'
+import type { DashboardEvent, DashboardRestaurant, NotificationSummary } from '@/lib/app/types'
+
+const HERO_IMAGE =
+  'https://lh3.googleusercontent.com/aida-public/AB6AXuAUde5tCk6qkkIUCGrBtU0O2eqtI3yJCAby_3JYeQG8PVOEa4RS4dbAqYLDna1zTSWNx4TLbixCVbGu9oJMJ4u71yokBhwg01rS4seZMwvTid_N9e3YfaS_AuoJVqKp4Xsrmvv__ilnBm_cpG0obYrqG175I8hA82K1odZ47iXF1uPovUEGJxmZNCztVBuIgmV_-NRZWEns9PriDlew-alB9nyMP8sbwMlZMJyhSre5OiTG7GX7EG_qkRwBffJSopQ9kjLWvHMkp3VE'
 
 export default function DashboardPage() {
   const router = useRouter()
-  const [email, setEmail] = useState<string | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
   const [events, setEvents] = useState<DashboardEvent[]>([])
   const [restaurants, setRestaurants] = useState<DashboardRestaurant[]>([])
   const [notifications, setNotifications] = useState<NotificationSummary[]>([])
+  const [selectedRestaurantId, setSelectedRestaurantId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [setupError, setSetupError] = useState('')
-  const [actionError, setActionError] = useState('')
-  const [eventActionLoadingId, setEventActionLoadingId] = useState<number | null>(null)
-  const [restaurantActionLoadingId, setRestaurantActionLoadingId] = useState<number | null>(null)
+
+  async function handleLogout() {
+    await logout()
+    router.replace('/login')
+  }
 
   useEffect(() => {
     let active = true
@@ -73,8 +75,6 @@ export default function DashboardPage() {
           return
         }
 
-        setEmail(bootstrap.email)
-        setProfile(bootstrap.profile)
         setNotifications(notificationResponse.data ?? [])
         setEvents(eventsPayload.events ?? [])
         setRestaurants(restaurantsPayload.restaurants ?? [])
@@ -92,248 +92,239 @@ export default function DashboardPage() {
     }
   }, [router])
 
-  async function handleLogout() {
-    await logout()
-    router.replace('/login')
-  }
-
-  async function handleEventSignup(eventId: number) {
-    setActionError('')
-    setEventActionLoadingId(eventId)
-
-    try {
-      await setEventSignup(eventId, 'join')
-      const payload = await fetchEvents()
-      setEvents(payload.events ?? [])
-    } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : 'Could not update your event signup.'
-      )
-    } finally {
-      setEventActionLoadingId(null)
-    }
-  }
-
-  async function handleNextEventAction(event: DashboardEvent, action: 'join' | 'leave') {
-    setActionError('')
-    setEventActionLoadingId(event.id)
-
-    try {
-      await setEventSignup(event.id, action)
-      const payload = await fetchEvents()
-      setEvents(payload.events ?? [])
-    } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : 'Could not update your event signup.'
-      )
-    } finally {
-      setEventActionLoadingId(null)
-    }
-  }
-
-  async function handleToggleSaved(restaurantId: number, action: 'save' | 'unsave') {
-    setActionError('')
-    setRestaurantActionLoadingId(restaurantId)
-
-    try {
-      await setSavedRestaurant(restaurantId, action)
-      const payload = await fetchRestaurants()
-      setRestaurants(payload.restaurants ?? [])
-    } catch (error) {
-      setActionError(
-        error instanceof Error ? error.message : 'Could not update saved restaurants.'
-      )
-    } finally {
-      setRestaurantActionLoadingId(null)
-    }
-  }
-
-  const unreadNotificationCount = notifications.filter((item) => !item.read_at).length
-  const savedRestaurants = restaurants.filter((restaurant) => restaurant.isSaved)
-  const topRestaurant = restaurants.find((restaurant) => !restaurant.isSaved) ?? restaurants[0] ?? null
-  const joinedEvents = events.filter(
-    (event) => event.signupStatus === 'going' || event.signupStatus === 'waitlisted'
+  const savedRestaurants = useMemo(
+    () => restaurants.filter((restaurant) => restaurant.isSaved).slice(0, 3),
+    [restaurants]
   )
-  const nextEvent = joinedEvents[0] ?? events.find((event) => event.status === 'open') ?? null
 
-  const nextAction = useMemo(() => {
-    const dayConfirmationEvent = events.find((event) => event.needsDayOfConfirmation)
+  const savedRestaurantKeys = useMemo(
+    () =>
+      new Set(
+        savedRestaurants.map((restaurant) =>
+          restaurant.googlePlaceId
+            ? `place:${restaurant.googlePlaceId}`
+            : `name:${restaurant.name.toLowerCase()}::${restaurant.subregion.toLowerCase()}`
+        )
+      ),
+    [savedRestaurants]
+  )
 
-    if (dayConfirmationEvent) {
-      return {
-        cta: '/events/' + dayConfirmationEvent.id,
-        description: 'A dinner you joined is happening today and still needs your reply.',
-        label: 'Confirm your table',
-      }
-    }
+  const displayEvents = useMemo(
+    () =>
+      events
+        .filter((event) => {
+          const placeKey = event.restaurantGooglePlaceId
+            ? `place:${event.restaurantGooglePlaceId}`
+            : null
+          const fallbackKey = `name:${event.restaurant_name.toLowerCase()}::${event.restaurant_subregion.toLowerCase()}`
 
-    if (unreadNotificationCount > 0) {
-      return {
-        cta: '/notifications',
-        description: `${unreadNotificationCount} unread ${unreadNotificationCount === 1 ? 'note is' : 'notes are'} waiting in your inbox.`,
-        label: 'Check your inbox',
-      }
-    }
-
-    if (topRestaurant && !topRestaurant.isSaved) {
-      return {
-        cta: '/restaurants',
-        description: `${topRestaurant.name} is a strong fit for your taste, budget and social vibe.`,
-        label: 'Save your next spot',
-      }
-    }
-
-    if (nextEvent) {
-      return {
-        cta: `/events/${nextEvent.id}`,
-        description: 'There is already a table worth deciding on.',
-        label: 'Review your next table',
-      }
-    }
-
-    return {
-      cta: '/profile',
-      description: 'A sharper taste profile gives you better tables back.',
-      label: 'Refresh your profile',
-    }
-  }, [events, nextEvent, topRestaurant, unreadNotificationCount])
+          return (placeKey !== null && savedRestaurantKeys.has(placeKey)) || savedRestaurantKeys.has(fallbackKey)
+        })
+        .slice(0, 4),
+    [events, savedRestaurantKeys]
+  )
+  const unreadNotificationCount = notifications.filter((item) => !item.read_at).length
+  const activeRestaurantId =
+    selectedRestaurantId && savedRestaurants.some((restaurant) => restaurant.id === selectedRestaurantId)
+      ? selectedRestaurantId
+      : null
 
   if (loading) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-6xl items-center px-8">
-        <p className="tb-copy text-sm">Loading dashboard...</p>
+      <main className="min-h-screen bg-[#f9f9f7]">
+        <div className="mx-auto flex min-h-screen max-w-7xl items-center px-8">
+          <p className="text-sm text-[#6c6558]">Loading dashboard...</p>
+        </div>
       </main>
     )
   }
 
   if (setupError) {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center px-8 py-16">
-        <p className="tb-label text-sm font-medium uppercase tracking-[0.2em]">Dashboard</p>
-        <h1 className="mt-3 text-4xl font-semibold text-[color:var(--foreground)]">Data setup still has gaps</h1>
-        <p className="tb-copy mt-4 max-w-2xl text-base">{setupError}</p>
-        <div className="mt-8 flex flex-wrap gap-3">
-          <Button href="/" variant="secondary">
-            Back to home
-          </Button>
-          <Button onClick={handleLogout}>Log out</Button>
+      <AppShell
+        currentPath="/dashboard"
+        onLogout={handleLogout}
+      >
+        <div className="mx-auto flex min-h-[50vh] max-w-3xl flex-col justify-center">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-[#6c6558]">Dashboard</p>
+          <h1 className="mt-3 text-4xl font-semibold text-[#1a1c1b]">Couldn&apos;t load your dashboard</h1>
+          <p className="mt-4 max-w-2xl text-base text-[#6c6558]">{setupError}</p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Button href="/" variant="secondary">
+              Back to home
+            </Button>
+            <Button onClick={() => void handleLogout()}>
+              Log out
+            </Button>
+          </div>
         </div>
-      </main>
+      </AppShell>
     )
   }
 
   return (
-    <AppShell currentPath="/dashboard" email={email} onLogout={handleLogout} title="Home">
-      <PageHeader
-        description="Find your next table."
-        eyebrow="Home"
-        title={`Good evening${profile?.display_name ? `, ${profile.display_name}` : ''}`}
-      />
+    <AppShell
+      currentPath="/dashboard"
+      onLogout={handleLogout}
+    >
+        <section className="rounded-[2rem] bg-[linear-gradient(135deg,#ffffff_0%,#f4f4f2_100%)] p-6 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)] md:p-8 lg:p-10">
+          <div className="flex flex-col items-start justify-between gap-8 md:flex-row md:items-center">
+            <div className="max-w-xl">
+              <h1 className="text-[2.25rem] font-bold leading-[0.95] tracking-[-0.04em] text-[#0f1720] sm:text-[3.25rem]">
+                Morning flavors, shared tonight.
+              </h1>
+              <p className="mt-6 text-lg leading-8 text-[#5b5348]">
+                Discover the best spots for your next social outing. From brunch favorites to
+                evening hideaways.
+              </p>
+              <div className="mt-8">
+                <Button
+                  className="rounded-full border-[#ffd740] bg-[#ffd740] px-8 py-4 text-base font-bold text-[#231b00] shadow-[0_14px_28px_rgba(255,215,64,0.42)] hover:border-[#eac32b] hover:bg-[#eac32b] sm:px-10 sm:py-5 sm:text-lg"
+                  href="/restaurants"
+                >
+                  <span className="mr-2">Find My Night</span>
+                  <svg aria-hidden="true" className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24">
+                    <path
+                      d="M5 12h14m-5-5 5 5-5 5"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="1.8"
+                    />
+                  </svg>
+                </Button>
+              </div>
+            </div>
 
-      <section className="rounded-[2rem] border border-[color:rgba(199,106,74,0.16)] bg-[color:rgba(255,248,243,0.9)] px-6 py-7 shadow-[0_24px_50px_rgba(94,74,60,0.08)]">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="tb-label text-xs font-medium uppercase tracking-[0.16em]">Start here</p>
-            <p className="mt-3 text-3xl font-semibold text-[color:var(--foreground)]">Find my table</p>
-            <p className="tb-copy mt-3 max-w-2xl text-base leading-7">
-              Restaurants picked around your taste, budget and social vibe.
-            </p>
+            <div className="w-full md:w-[46%]">
+              <div className="overflow-hidden rounded-2xl shadow-2xl">
+                <img
+                  alt="Warm restaurant interior"
+                  className="aspect-[16/9] w-full object-cover"
+                  src={HERO_IMAGE}
+                />
+              </div>
+            </div>
           </div>
-          <Button href="/restaurants">Find my table</Button>
-        </div>
-      </section>
-
-      {actionError ? (
-        <div className="mt-6 rounded-3xl border border-[color:color-mix(in_srgb,var(--accent)_28%,white)] bg-[color:color-mix(in_srgb,var(--accent)_10%,var(--surface))] p-4 text-sm text-[color:var(--accent-strong)]">
-          {actionError}
-        </div>
-      ) : null}
-
-      <section className="rounded-[2rem] bg-[color:rgba(255,255,255,0.56)] px-6 py-6">
-        <p className="tb-label text-xs font-medium uppercase tracking-[0.16em]">Best next step</p>
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-2xl font-semibold text-[color:var(--foreground)]">{nextAction.label}</p>
-            <p className="tb-copy mt-2 max-w-2xl text-sm leading-7">{nextAction.description}</p>
-          </div>
-          <Button href={nextAction.cta}>Open</Button>
-        </div>
-      </section>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <ActionCard
-          description="Browse places picked for your taste."
-          href="/restaurants"
-          label="Restaurants"
-          meta={<span className="tb-label text-sm font-medium">{restaurants.length} picks</span>}
-        />
-        <ActionCard
-          description="See live dinners and the ones you have joined."
-          href="/events"
-          label="Events"
-          meta={<span className="tb-label text-sm font-medium">{events.length} live</span>}
-        />
-        <ActionCard
-          description="Open reminders, changes and table updates."
-          href="/notifications"
-          label="Inbox"
-          meta={<span className="tb-label text-sm font-medium">{unreadNotificationCount} unread</span>}
-        />
-        <ActionCard
-          description="Keep your taste profile up to date."
-          href="/profile"
-          label="Profile"
-        />
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <section>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-xl font-semibold text-[color:var(--foreground)]">Top restaurant match</h2>
-            <Link className="text-sm font-medium text-[color:var(--text-muted)] hover:text-[color:var(--accent-strong)]" href="/restaurants">
-              View all
-            </Link>
-          </div>
-          {topRestaurant ? (
-            <RestaurantCard
-              eventLoadingId={eventActionLoadingId}
-              onJoinEvent={(eventId) => void handleEventSignup(eventId)}
-              onToggleSaved={(restaurantId, action) => void handleToggleSaved(restaurantId, action)}
-              restaurant={topRestaurant}
-              saving={restaurantActionLoadingId === topRestaurant.id}
-            />
-          ) : (
-            <EmptyState
-              description="No restaurant picks are ready yet."
-              title="Nothing picked yet"
-            />
-          )}
         </section>
 
-        <section>
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-xl font-semibold text-[color:var(--foreground)]">
-              {joinedEvents.length > 0 ? 'Next joined event' : 'Strongest event recommendation'}
-            </h2>
-            <Link className="text-sm font-medium text-[color:var(--text-muted)] hover:text-[color:var(--accent-strong)]" href="/events">
-              View all
+        <section className="mt-12">
+          <div className="mb-6 flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-[2rem] font-bold leading-none tracking-[-0.03em] text-[#0f1720]">
+                Your Saved Spots
+              </h2>
+              <p className="mt-2 text-sm text-[#6c6558]">The places you&apos;ve been dreaming about.</p>
+            </div>
+            <Link className="text-sm font-medium text-[#3d8db0] hover:underline" href="/restaurants">
+              View all saved
             </Link>
           </div>
-          {nextEvent ? (
-            <EventCard
-              detailHref={`/events/${nextEvent.id}`}
-              event={nextEvent}
-              eventActionLoadingId={eventActionLoadingId}
-              onSetEventSignup={(action) => void handleNextEventAction(nextEvent, action)}
-            />
-          ) : (
-            <EmptyState
-              description={savedRestaurants.length > 0 ? 'No events are live yet.' : 'Save a few restaurants and we will surface the right dinners here.'}
-              title="Nothing live yet"
-            />
-          )}
+
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="space-y-4 lg:col-span-1">
+              {savedRestaurants.length > 0 ? (
+                savedRestaurants.map((restaurant, index) => (
+                  <SavedRestaurantTile
+                    active={restaurant.id === activeRestaurantId}
+                    index={index}
+                    key={restaurant.id}
+                    onSelect={() => setSelectedRestaurantId(restaurant.id)}
+                    restaurant={restaurant}
+                  />
+                ))
+              ) : (
+                <div className="rounded-xl border border-[#ece7dc] bg-white p-5 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+                  <h3 className="text-lg font-semibold text-[#131313]">No saved spots yet</h3>
+                  <p className="mt-2 text-sm leading-6 text-[#6c6558]">
+                    Save a restaurant first and it&apos;ll show up here with its live map pin.
+                  </p>
+                  <div className="mt-4">
+                    <Button className="rounded-full" href="/restaurants">
+                      Explore restaurants
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="lg:col-span-2">
+              {savedRestaurants.length > 0 ? (
+                <SavedSpotsMap
+                  onSelectRestaurant={setSelectedRestaurantId}
+                  restaurants={savedRestaurants}
+                  selectedRestaurantId={activeRestaurantId}
+                />
+              ) : (
+                <div className="flex min-h-[400px] flex-col items-center justify-center rounded-3xl border border-[#d8e6e8] bg-[#dce9e8] px-6 text-center">
+                  <p className="text-base font-semibold text-[#1a1c1b]">Your saved map will appear here</p>
+                  <p className="mt-3 max-w-md text-sm leading-6 text-[#6f8f98]">
+                    Keep a shortlist of places you want to try, then use the map to compare them at a glance.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </section>
-      </div>
+
+        <section className="mt-2">
+          <div className="mb-6 flex items-end justify-between gap-4">
+            <div>
+              <h2 className="text-[2rem] font-bold leading-none tracking-[-0.03em] text-[#0f1720]">
+                Upcoming Meetups &amp; Events
+              </h2>
+              <p className="mt-2 text-sm text-[#6c6558]">Don&apos;t just eat, connect.</p>
+            </div>
+            <Link
+              className="rounded-full bg-[#f0f0ed] px-4 py-2 text-sm font-medium text-[#4e4e4e] transition hover:bg-[#e5e5e1]"
+              href="/events"
+            >
+              Calendar View
+            </Link>
+          </div>
+
+          {displayEvents.length > 0 ? (
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
+              {displayEvents.map((event, index) => (
+                <HomeEventTile event={event} index={index} key={event.id} />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-[#ece7dc] bg-white p-6 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+              <h3 className="text-2xl font-semibold text-[#131313]">
+                {savedRestaurants.length > 0 ? 'No events are live yet' : 'Save a restaurant to unlock tables'}
+              </h3>
+              <p className="mt-3 max-w-2xl text-base leading-7 text-[#6c6558]">
+                {savedRestaurants.length > 0
+                  ? 'We’ll bring forward the right tables from your saved spots as they go live.'
+                  : 'Events only show up here after you save a venue, so the shortlist stays tied to places you actually want.'}
+              </p>
+            </div>
+          )}
+
+          <div className="mt-10 rounded-2xl border border-[#ece7dc] bg-white p-5 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-[#6c6558]">
+                  {unreadNotificationCount > 0
+                    ? `${unreadNotificationCount} unread update${unreadNotificationCount === 1 ? '' : 's'} in your inbox.`
+                    : 'Your inbox is clear right now.'}
+                </p>
+                <p className="mt-1 text-base text-[#131313]">
+                  Check reminders, confirmations and table changes.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button className="rounded-full" href="/notifications" variant="secondary">
+                  Open inbox
+                </Button>
+                <Button className="rounded-full" href="/profile" variant="secondary">
+                  Profile
+                </Button>
+              </div>
+            </div>
+          </div>
+        </section>
     </AppShell>
   )
 }
