@@ -53,7 +53,7 @@ export function SavedRestaurantTile({
     <button
       className={`flex w-full gap-4 rounded-xl border bg-white p-3 text-left shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)] transition ${
         active
-          ? 'border-[#ffd740] ring-2 ring-[#ffeaa0]'
+          ? 'border-[color:var(--accent)] ring-2 ring-[color:var(--accent-soft)]'
           : 'border-[#ece7dc] hover:translate-x-1'
       }`}
       onClick={onSelect}
@@ -71,7 +71,7 @@ export function SavedRestaurantTile({
           {restaurant.name}
         </h3>
         {formatRating(restaurant) ? (
-          <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-[#d29000]">
+          <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-[color:var(--accent-strong)]">
             <svg aria-hidden="true" className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24">
               <path d="M12 3.6 14.9 9l5.9.8-4.3 4.2 1 5.8L12 17l-5.5 2.8 1-5.8L3.2 9.8 9.1 9 12 3.6Z" />
             </svg>

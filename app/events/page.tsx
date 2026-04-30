@@ -140,7 +140,7 @@ export default function EventsPage() {
       />
 
       {error ? (
-        <div className="rounded-[1.5rem] border border-[#f3d87a] bg-[#fff8dc] p-4 text-sm text-[#715c00]">
+        <div className="rounded-[1.5rem] border border-[color:var(--accent-border)] bg-[color:var(--accent-softer)] p-4 text-sm text-[color:var(--accent-strong)]">
           {error}
         </div>
       ) : null}

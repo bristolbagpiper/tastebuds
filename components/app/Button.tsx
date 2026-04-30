@@ -29,7 +29,7 @@ const VARIANT_STYLES = {
   ghost:
     'border border-transparent bg-transparent text-[color:var(--text-muted)] hover:bg-[color:var(--surface-soft)] hover:text-[color:var(--foreground)]',
   primary:
-    'border border-[color:var(--accent)] bg-[color:var(--accent)] text-[color:var(--accent-text)] shadow-[0_10px_20px_rgba(255,215,64,0.32)] hover:border-[color:var(--accent-strong)] hover:bg-[#f0cb37]',
+    'border border-[color:var(--accent)] bg-[color:var(--accent)] text-[color:var(--accent-text)] shadow-[0_10px_20px_rgba(245,158,11,0.3)] hover:border-[color:var(--accent-strong)] hover:bg-[color:var(--accent-hover)]',
   secondary:
     'border border-[color:var(--border-soft)] bg-[color:var(--surface-soft)] text-[color:var(--foreground)] hover:border-[color:var(--accent)] hover:bg-[color:var(--surface)]',
 } as const

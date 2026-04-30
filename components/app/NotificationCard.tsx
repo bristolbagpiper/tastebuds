@@ -17,7 +17,7 @@ export function NotificationCard({
         <div className="max-w-3xl">
           <div className="flex flex-wrap items-center gap-2">
             {!notification.read_at ? (
-              <span className="rounded-full bg-[#fff5c9] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#715c00]">
+              <span className="rounded-full bg-[color:var(--accent-soft)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-[color:var(--accent-strong)]">
                 New
               </span>
             ) : null}

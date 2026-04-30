@@ -179,7 +179,7 @@ export default function DashboardPage() {
               </p>
               <div className="mt-8">
                 <Button
-                  className="rounded-full border-[#ffd740] bg-[#ffd740] px-8 py-4 text-base font-bold text-[#231b00] shadow-[0_14px_28px_rgba(255,215,64,0.42)] hover:border-[#eac32b] hover:bg-[#eac32b] sm:px-10 sm:py-5 sm:text-lg"
+                  className="rounded-full border-[color:var(--accent)] bg-[color:var(--accent)] px-8 py-4 text-base font-bold text-[color:var(--accent-text)] shadow-[0_14px_28px_rgba(245,158,11,0.36)] hover:border-[color:var(--accent-hover)] hover:bg-[color:var(--accent-hover)] sm:px-10 sm:py-5 sm:text-lg"
                   href="/restaurants"
                 >
                   <span className="mr-2">Find My Night</span>

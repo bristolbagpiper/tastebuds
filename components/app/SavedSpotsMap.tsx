@@ -115,7 +115,7 @@ function loadGoogleMaps(apiKey: string) {
 
 function getMarkerIcon(googleApi: GoogleMapsApi, active: boolean) {
   return {
-    fillColor: active ? '#ffd740' : '#ffd9e1',
+    fillColor: active ? '#f59e0b' : '#ffd9e1',
     fillOpacity: 1,
     path: googleApi.maps.SymbolPath.CIRCLE,
     scale: active ? 11 : 9,
@@ -142,7 +142,7 @@ function getInfoWindowContent(restaurant: DashboardRestaurant) {
       <div style="font-size: 13px; color: #6c6558; margin-top: 4px;">${getRestaurantSubtitle(restaurant)}</div>
       ${
         restaurant.googleRating !== null
-          ? `<div style="font-size: 12px; color: #715c00; margin-top: 8px;">${restaurant.googleRating.toFixed(1)} on Google${
+          ? `<div style="font-size: 12px; color: #b45309; margin-top: 8px;">${restaurant.googleRating.toFixed(1)} on Google${
               restaurant.googleUserRatingsTotal
                 ? ` (${restaurant.googleUserRatingsTotal} reviews)`
                 : ''

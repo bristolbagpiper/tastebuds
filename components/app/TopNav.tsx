@@ -35,8 +35,8 @@ export function TopNav({
                 className={cx(
                   'pb-1 text-sm tracking-tight transition',
                   isActive
-                    ? 'border-b-2 border-[#e2a300] font-bold text-[#e2a300]'
-                    : 'font-medium text-stone-500 hover:text-[#e2a300]'
+                    ? 'border-b-2 border-[color:var(--accent)] font-bold text-[color:var(--accent)]'
+                    : 'font-medium text-stone-500 hover:text-[color:var(--accent)]'
                 )}
                 href={item.href}
                 key={item.href}

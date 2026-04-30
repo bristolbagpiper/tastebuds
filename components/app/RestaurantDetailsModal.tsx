@@ -169,7 +169,7 @@ export function RestaurantDetailsModal({
 
             <div className="mt-6 flex flex-wrap items-center gap-3">
               {rating !== null ? (
-                <span className="rounded-full bg-[#fff5c9] px-3 py-1 text-sm font-semibold text-[#715c00]">
+                <span className="rounded-full bg-[color:var(--accent-soft)] px-3 py-1 text-sm font-semibold text-[color:var(--accent-strong)]">
                   {rating.toFixed(1)}
                   {userRatingsTotal ? ` on Google (${userRatingsTotal} reviews)` : ' on Google'}
                 </span>
@@ -190,7 +190,7 @@ export function RestaurantDetailsModal({
               <p className="mt-6 text-sm text-[color:var(--text-muted)]">Loading Google details...</p>
             ) : null}
             {error ? (
-              <p className="mt-6 rounded-[1.25rem] border border-[#f3d87a] bg-[#fff8dc] p-4 text-sm text-[#715c00]">
+              <p className="mt-6 rounded-[1.25rem] border border-[color:var(--accent-border)] bg-[color:var(--accent-softer)] p-4 text-sm text-[color:var(--accent-strong)]">
                 {error}
               </p>
             ) : null}

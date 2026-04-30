@@ -196,7 +196,7 @@ export function EventCard({
           />
           <div className="absolute left-4 top-4 rounded-lg bg-white/90 px-3 py-2 text-center backdrop-blur">
             <span className="block text-xl font-bold leading-none text-[#1a1c1b]">{badge.day}</span>
-            <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.18em] text-[#715c00]">
+            <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--accent-strong)]">
               {badge.month}
             </span>
           </div>
@@ -212,7 +212,7 @@ export function EventCard({
                   score={event.projectedRestaurantScore}
                 />
                 {event.signupStatus === 'going' ? (
-                  <span className="rounded-full bg-[#fff5c9] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#715c00]">
+                  <span className="rounded-full bg-[color:var(--accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--accent-strong)]">
                     Joined
                   </span>
                 ) : null}
@@ -315,8 +315,8 @@ export function EventCard({
               </section>
 
               {event.needsDayOfConfirmation && onSetDayOfConfirmation ? (
-                <section className="mt-5 rounded-[1.75rem] border border-[#f3d87a] bg-[#fff8dc] p-5">
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#715c00]">
+                <section className="mt-5 rounded-[1.75rem] border border-[color:var(--accent-border)] bg-[color:var(--accent-softer)] p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--accent-strong)]">
                     Confirmation needed today
                   </p>
                   <p className="mt-2 text-base font-semibold text-[color:var(--foreground)]">
@@ -350,7 +350,7 @@ export function EventCard({
                             className="flex items-center gap-3 rounded-2xl border border-[color:var(--border-soft)] bg-white px-4 py-3"
                             key={`${event.id}-${attendee.displayName}-${index}`}
                           >
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#fff5c9] text-sm font-semibold text-[#715c00]">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[color:var(--accent-soft)] text-sm font-semibold text-[color:var(--accent-strong)]">
                               {getAttendeeInitials(attendee.displayName)}
                             </div>
                             <div className="min-w-0">

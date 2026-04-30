@@ -10,12 +10,17 @@
   --surface-strong: #eeeeec;
   --border-soft: #ece7dc;
   --text-muted: #6c6558;
-  --accent: #ffd740;
-  --accent-strong: #d29000;
-  --accent-text: #231b00;
+  --accent: #f59e0b;
+  --accent-hover: #d97706;
+  --accent-strong: #b45309;
+  --accent-text: #3a2400;
+  --accent-soft: #fef3c7;
+  --accent-softer: #fffbeb;
+  --accent-border: #fcd34d;
+  --accent-deep: #78350f;
   --link: #3d8db0;
-  --shadow-soft: 0 18px 44px rgba(113, 92, 0, 0.08);
-  --shadow-float: 0 10px 40px -10px rgba(113, 92, 0, 0.08);
+  --shadow-soft: 0 18px 44px rgba(180, 83, 9, 0.08);
+  --shadow-float: 0 10px 40px -10px rgba(180, 83, 9, 0.08);
 }
 
 @theme inline {

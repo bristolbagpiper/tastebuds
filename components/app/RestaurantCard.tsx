@@ -101,7 +101,7 @@ export function RestaurantCard({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-3xl">
               {restaurant.isSaved ? (
-                <span className="rounded-full bg-[#fff5c9] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#715c00]">
+                <span className="rounded-full bg-[color:var(--accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--accent-strong)]">
                   Saved
                 </span>
               ) : null}

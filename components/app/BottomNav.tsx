@@ -92,7 +92,7 @@ export function BottomNav({ currentPath }: { currentPath: string }) {
               className={cx(
                 'min-w-0 flex-1 rounded-2xl px-2 py-2 text-center text-[11px] font-medium transition',
                 isActive
-                  ? 'bg-[#fff5c9] text-[#715c00]'
+                  ? 'bg-[color:var(--accent-soft)] text-[color:var(--accent-strong)]'
                   : 'text-[color:var(--text-muted)] hover:bg-[#f5f3ee] hover:text-[color:var(--foreground)]'
               )}
               href={item.href}

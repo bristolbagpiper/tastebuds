@@ -99,7 +99,7 @@ function PreferenceGroup({
             <button
               className={
                 active
-                  ? 'rounded-full border border-[color:var(--accent)] bg-[color:var(--accent)] px-3 py-2 text-sm font-semibold text-[color:var(--accent-text)] shadow-[0_10px_20px_rgba(255,215,64,0.3)] transition'
+                  ? 'rounded-full border border-[color:var(--accent)] bg-[color:var(--accent)] px-3 py-2 text-sm font-semibold text-[color:var(--accent-text)] shadow-[0_10px_20px_rgba(245,158,11,0.3)] transition'
                   : 'rounded-full border border-[color:var(--border-soft)] bg-white px-3 py-2 text-sm font-medium text-[color:var(--text-muted)] transition hover:border-[color:var(--accent)] hover:text-[color:var(--foreground)]'
               }
               key={option}

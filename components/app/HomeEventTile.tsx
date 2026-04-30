@@ -101,7 +101,7 @@ export function HomeEventTile({
         />
         <div className="absolute left-4 top-4 rounded-lg bg-white/90 px-3 py-2 text-center backdrop-blur">
           <span className="block text-xl font-bold leading-none text-[#1a1c1b]">{badge.day}</span>
-          <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.18em] text-[#715c00]">
+          <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.18em] text-[color:var(--accent-strong)]">
             {badge.month}
           </span>
         </div>

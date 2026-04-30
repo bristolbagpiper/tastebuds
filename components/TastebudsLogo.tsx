@@ -64,7 +64,7 @@ export function TastebudsMark({
           C53.8 24.7 57.2 19.2 62.5 17.1
           C58.5 10.9 54.5 7 50 7Z
         "
-        fill="#F5A623"
+        fill="#F59E0B"
       />
       <path
         d="M29 39C34 34.5 40 34.5 44.5 39"
@@ -89,7 +89,7 @@ export function TastebudsMark({
       />
       <path
         d="M64 74C64.5 78 63.5 81 61.5 83"
-        stroke="#F5A623"
+        stroke="#F59E0B"
         strokeLinecap="round"
         strokeWidth="3"
       />
