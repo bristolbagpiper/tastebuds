@@ -103,7 +103,7 @@ function getDateBadge(value: string) {
 }
 
 function getEventImage(event: DashboardEvent) {
-  return EVENT_IMAGES[event.id % EVENT_IMAGES.length]
+  return EVENT_IMAGES[event.id % EVENT_IMAGES.length] ?? EVENT_IMAGES[0]!
 }
 
 function getAttendeeInitials(displayName: string) {

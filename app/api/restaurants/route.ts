@@ -149,7 +149,13 @@ export async function GET(request: Request) {
       !profile.preferred_crowd?.length ||
       !profile.preferred_music?.length ||
       !profile.preferred_setting?.length ||
-      !profile.preferred_price?.length
+      !profile.preferred_price?.length ||
+      !profile.preferred_vibes?.length ||
+      !profile.drinking_preferences?.length ||
+      !profile.dietary_restrictions?.length ||
+      !profile.conversation_preference?.length ||
+      !profile.age_range_comfort?.length ||
+      !profile.group_size_comfort?.length
     ) {
       return NextResponse.json({
         ok: true,
@@ -292,7 +298,14 @@ export async function GET(request: Request) {
           venue_vibes: restaurant.venue_vibes,
         }
 
-        const availableEvents = (eventsByRestaurantId.get(restaurant.id) ?? [])
+        const restaurantEvents = eventsByRestaurantId.get(restaurant.id) ?? []
+        const isSaved = savedRestaurantIds.has(restaurant.id)
+        const hasJoinedEventAtRestaurant = restaurantEvents.some(
+          (event) => mySignupStatusByEventId.get(event.id) === 'going'
+        )
+        const canShowRestaurantEvents = isSaved || hasJoinedEventAtRestaurant
+        const availableEvents = canShowRestaurantEvents
+          ? restaurantEvents
           .filter((event) => event.status === 'open')
           .slice(0, 3)
           .map((event) => ({
@@ -302,6 +315,7 @@ export async function GET(request: Request) {
             title: event.title,
             viabilityStatus: event.viability_status,
           }))
+          : []
 
         const venueDistanceKm =
           profile.home_latitude !== null &&
@@ -344,7 +358,7 @@ export async function GET(request: Request) {
           googleUserRatingsTotal: restaurant.google_user_ratings_total,
           googleWebsiteUri: restaurant.google_website_uri,
           id: restaurant.id,
-          isSaved: savedRestaurantIds.has(restaurant.id),
+          isSaved,
           matchScore: calculateRestaurantMatchScore(scoringProfile, scoringRestaurant),
           menu_experience_tags: restaurant.menu_experience_tags,
           name: restaurant.name,

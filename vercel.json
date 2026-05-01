@@ -5,6 +5,10 @@
       "schedule": "0 14 * * *"
     },
     {
+      "path": "/api/refresh-google-places",
+      "schedule": "10 9 * * *"
+    },
+    {
       "path": "/api/cleanup-notifications?days=30&limit=500",
       "schedule": "25 3 * * *"
     }

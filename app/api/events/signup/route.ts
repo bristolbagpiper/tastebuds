@@ -22,6 +22,7 @@ type EventRow = {
   duration_minutes: number
   id: number
   intent: 'dating' | 'friendship'
+  restaurant_id: number | null
   restaurant_cuisines: string[] | null
   restaurant_name: string
   restaurant_subregion: string | null
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
     const { data: event, error: eventError } = await adminClient
       .from('events')
       .select(
-        'capacity, duration_minutes, id, intent, restaurant_cuisines, restaurant_name, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting'
+        'capacity, duration_minutes, id, intent, restaurant_id, restaurant_cuisines, restaurant_name, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_latitude, venue_longitude, venue_music, venue_price, venue_scene, venue_setting'
       )
       .eq('id', eventId)
       .maybeSingle<EventRow>()
@@ -155,6 +156,31 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: 'This event is not open for signups.' },
         { status: 400 }
+      )
+    }
+
+    if (event.restaurant_id === null) {
+      return NextResponse.json(
+        { error: 'This table is not connected to a restaurant yet.' },
+        { status: 400 }
+      )
+    }
+
+    const { data: savedRestaurant, error: savedRestaurantError } = await adminClient
+      .from('saved_restaurants')
+      .select('restaurant_id')
+      .eq('restaurant_id', event.restaurant_id)
+      .eq('user_id', user.id)
+      .maybeSingle<{ restaurant_id: number }>()
+
+    if (savedRestaurantError) {
+      throw new Error(savedRestaurantError.message)
+    }
+
+    if (!savedRestaurant) {
+      return NextResponse.json(
+        { error: 'Save this restaurant before joining its table.' },
+        { status: 403 }
       )
     }
 

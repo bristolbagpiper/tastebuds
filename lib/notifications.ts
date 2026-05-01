@@ -12,11 +12,12 @@ export type NotificationType =
   | 'event_follow_up'
   | 'event_day_confirmation'
   | 'event_attendance'
+  | 'restaurant_removed'
 
 type NotificationInput = {
   body: string
   duplicateBehavior?: 'rearm' | 'skip'
-  eventId: number
+  eventId?: number | null
   title: string
   type: NotificationType
   userId: string
@@ -40,7 +41,12 @@ async function rearmExistingNotification(
     .select('body, id, title, user_id')
     .eq('user_id', notification.userId)
     .eq('type', notification.type)
-    .eq('event_id', notification.eventId)
+
+  if (notification.eventId === null || notification.eventId === undefined) {
+    query.is('event_id', null)
+  } else {
+    query.eq('event_id', notification.eventId)
+  }
 
   const { data: existingNotification, error: findError } =
     await query.maybeSingle()
@@ -182,7 +188,7 @@ export async function queueNotifications(notifications: NotificationInput[]) {
       .from('notifications')
       .insert({
         body: notification.body,
-        event_id: notification.eventId,
+        event_id: notification.eventId ?? null,
         title: notification.title,
         type: notification.type,
         user_id: notification.userId,

@@ -45,6 +45,7 @@ export const DRINKING_PREFERENCE_TAGS = [
   'Open to anything',
 ] as const
 export const DIETARY_RESTRICTION_TAGS = [
+  'No dietary restrictions',
   'Vegetarian',
   'Vegan',
   'Gluten-free',
@@ -496,7 +497,7 @@ function scoreDrinkingPreferences(profile: ProfileForScoring, event: EventForSco
 function scoreDietaryPreferences(profile: ProfileForScoring, event: EventForScoring) {
   const preferences = normalizeDietaryRestrictionList(profile.dietary_restrictions)
 
-  if (preferences.length === 0) {
+  if (preferences.length === 0 || preferences.includes('No dietary restrictions')) {
     return 0.6
   }
 

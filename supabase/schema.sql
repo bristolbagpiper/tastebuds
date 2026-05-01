@@ -536,7 +536,7 @@ drop constraint if exists event_signups_status_check;
 
 alter table public.event_signups
 add constraint event_signups_status_check
-check (status in ('going', 'waitlisted', 'cancelled', 'removed', 'no_show', 'attended'));
+check (status in ('going', 'cancelled', 'removed', 'no_show', 'attended'));
 
 alter table public.notifications
 add column if not exists event_id bigint references public.events(id) on delete cascade;
@@ -554,10 +554,9 @@ check (
     'event_reminder_24h',
     'event_reminder_2h',
     'event_follow_up',
-    'event_waitlist',
-    'event_promoted',
     'event_attendance',
-    'event_day_confirmation'
+    'event_day_confirmation',
+    'restaurant_removed'
   )
 );
 
@@ -661,8 +660,8 @@ begin
     and es.user_id = p_user_id
   for update;
 
-  if coalesce(v_existing_status, '') in ('going', 'waitlisted') then
-    return query select true, v_existing_status, null::text;
+  if coalesce(v_existing_status, '') = 'going' then
+    return query select true, 'going', null::text;
     return;
   end if;
 
@@ -673,30 +672,7 @@ begin
     and es.status = 'going';
 
   if v_attendee_count >= v_event_capacity then
-    insert into public.event_signups (
-      day_of_confirmation_at,
-      day_of_confirmation_status,
-      event_id,
-      status,
-      updated_at,
-      user_id
-    )
-    values (
-      null,
-      'pending',
-      p_event_id,
-      'waitlisted',
-      timezone('utc', now()),
-      p_user_id
-    )
-    on conflict (event_id, user_id)
-    do update set
-      day_of_confirmation_at = null,
-      day_of_confirmation_status = 'pending',
-      status = 'waitlisted',
-      updated_at = excluded.updated_at;
-
-    return query select true, 'waitlisted', null::text;
+    return query select false, 'full', 'This table is full. Try a similar table instead.';
     return;
   end if;
 
@@ -760,9 +736,8 @@ check (
     'event_reminder_24h',
     'event_reminder_2h',
     'event_follow_up',
-    'event_waitlist',
-    'event_promoted',
     'event_attendance',
-    'event_day_confirmation'
+    'event_day_confirmation',
+    'restaurant_removed'
   )
 );

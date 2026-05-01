@@ -86,6 +86,8 @@ export function formatNotificationType(type: NotificationSummary['type']) {
       return 'Follow-up'
     case 'event_attendance':
       return 'Attendance'
+    case 'restaurant_removed':
+      return 'Restaurant update'
     default:
       return 'Notice'
   }
@@ -153,7 +155,12 @@ export function toFeedbackDraft(event: DashboardEvent): FeedbackDraft {
 }
 
 export function isProfileComplete(profile: {
+  age_range_comfort: string[] | null
+  conversation_preference: string[] | null
+  dietary_restrictions: string[] | null
+  drinking_preferences: string[] | null
   display_name: string | null
+  group_size_comfort: string[] | null
   home_latitude: number | null
   home_longitude: number | null
   preferred_crowd: string[] | null
@@ -162,6 +169,7 @@ export function isProfileComplete(profile: {
   preferred_price: string[] | null
   preferred_scene: string[] | null
   preferred_setting: string[] | null
+  preferred_vibes: string[] | null
   subregion: string | null
 } | null) {
   return Boolean(
@@ -174,6 +182,12 @@ export function isProfileComplete(profile: {
       profile.preferred_crowd?.length &&
       profile.preferred_music?.length &&
       profile.preferred_setting?.length &&
-      profile.preferred_price?.length
+      profile.preferred_price?.length &&
+      profile.preferred_vibes?.length &&
+      profile.drinking_preferences?.length &&
+      profile.dietary_restrictions?.length &&
+      profile.conversation_preference?.length &&
+      profile.age_range_comfort?.length &&
+      profile.group_size_comfort?.length
   )
 }

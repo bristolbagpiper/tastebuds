@@ -256,7 +256,13 @@ export function ProfileEditor({
       preferredCrowd.length === 0 ||
       preferredMusic.length === 0 ||
       preferredSetting.length === 0 ||
-      preferredPrice.length === 0
+      preferredPrice.length === 0 ||
+      preferredVibes.length === 0 ||
+      drinkingPreferences.length === 0 ||
+      dietaryRestrictions.length === 0 ||
+      conversationPreference.length === 0 ||
+      ageRangeComfort.length === 0 ||
+      groupSizeComfort.length === 0
     ) {
       setError('Complete each section before saving your taste profile.')
       return

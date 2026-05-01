@@ -14,7 +14,7 @@ const EVENT_IMAGES = [
 const FALLBACK_AVATARS = ['AL', 'JM', 'RK', 'ST', 'MV', 'PP'] as const
 
 function getEventImage(index: number) {
-  return EVENT_IMAGES[index % EVENT_IMAGES.length]
+  return EVENT_IMAGES[index % EVENT_IMAGES.length] ?? EVENT_IMAGES[0]!
 }
 
 function getEventLabel(event: DashboardEvent) {

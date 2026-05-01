@@ -7,6 +7,7 @@ import {
   type EventForScoring,
   type ProfileForScoring,
 } from '@/lib/events'
+import { getVisibleEventsForSavedRestaurants } from '@/lib/app/event-visibility'
 import { hasEventStarted, isSameEventDayInNewYork } from '@/lib/event-time'
 import {
   createServerSupabaseAdminClient,
@@ -74,6 +75,10 @@ type SignupRow = {
   restaurant_match_score: number
   status: 'going' | 'cancelled' | 'no_show' | 'removed' | 'attended'
   user_id: string
+}
+
+type SavedRestaurantRow = {
+  restaurant_id: number
 }
 
 type ProfileRow = {
@@ -161,7 +166,13 @@ export async function GET(request: Request) {
       !profile.preferred_crowd?.length ||
       !profile.preferred_music?.length ||
       !profile.preferred_setting?.length ||
-      !profile.preferred_price?.length
+      !profile.preferred_price?.length ||
+      !profile.preferred_vibes?.length ||
+      !profile.drinking_preferences?.length ||
+      !profile.dietary_restrictions?.length ||
+      !profile.conversation_preference?.length ||
+      !profile.age_range_comfort?.length ||
+      !profile.group_size_comfort?.length
     ) {
       return NextResponse.json({
         events: [],
@@ -170,26 +181,76 @@ export async function GET(request: Request) {
       })
     }
 
-    const { data: events, error: eventsError } = await adminClient
-      .from('events')
-      .select(
-        'capacity, description, duration_minutes, google_good_for_groups, google_good_for_watching_sports, google_live_music, google_open_now, google_opening_hours, google_outdoor_seating, google_reservable, google_serves_beer, google_serves_brunch, google_serves_cocktails, google_serves_dessert, google_serves_dinner, google_serves_vegetarian_food, google_serves_wine, id, intent, menu_experience_tags, minimum_viable_attendees, restaurant_id, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_formats, venue_good_for_casual_meetups, venue_good_for_cocktails, venue_good_for_conversation, venue_good_for_dinner, venue_group_friendly, venue_indoor_outdoor, venue_latitude, venue_longitude, venue_music, venue_noise_level, venue_price, venue_reservation_friendly, venue_scene, venue_seating_types, venue_setting, venue_vibes, viability_status'
-      )
-      .neq('status', 'cancelled')
-      .is('archived_at', null)
-      .gte('starts_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-      .order('starts_at', { ascending: true })
-      .limit(40)
-      .returns<EventRow[]>()
+    const [eventsResponse, savedRestaurantsResponse] = await Promise.all([
+      adminClient
+        .from('events')
+        .select(
+          'capacity, description, duration_minutes, google_good_for_groups, google_good_for_watching_sports, google_live_music, google_open_now, google_opening_hours, google_outdoor_seating, google_reservable, google_serves_beer, google_serves_brunch, google_serves_cocktails, google_serves_dessert, google_serves_dinner, google_serves_vegetarian_food, google_serves_wine, id, intent, menu_experience_tags, minimum_viable_attendees, restaurant_id, restaurant_cuisines, restaurant_name, restaurant_neighbourhood, restaurant_subregion, starts_at, status, title, venue_crowd, venue_energy, venue_formats, venue_good_for_casual_meetups, venue_good_for_cocktails, venue_good_for_conversation, venue_good_for_dinner, venue_group_friendly, venue_indoor_outdoor, venue_latitude, venue_longitude, venue_music, venue_noise_level, venue_price, venue_reservation_friendly, venue_scene, venue_seating_types, venue_setting, venue_vibes, viability_status'
+        )
+        .neq('status', 'cancelled')
+        .is('archived_at', null)
+        .gte('starts_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+        .order('starts_at', { ascending: true })
+        .limit(40)
+        .returns<EventRow[]>(),
+      adminClient
+        .from('saved_restaurants')
+        .select('restaurant_id')
+        .eq('user_id', user.id)
+        .returns<SavedRestaurantRow[]>(),
+    ])
+
+    const { data: events, error: eventsError } = eventsResponse
+    const { data: savedRestaurants, error: savedRestaurantsError } =
+      savedRestaurantsResponse
 
     if (eventsError) {
       throw new Error(eventsError.message)
     }
 
-    const eventIds = (events ?? []).map((event) => event.id)
+    if (savedRestaurantsError) {
+      throw new Error(savedRestaurantsError.message)
+    }
+
+    const allEventIds = (events ?? []).map((event) => event.id)
+    const savedRestaurantIds = new Set(
+      (savedRestaurants ?? []).map((restaurant) => restaurant.restaurant_id)
+    )
+
+    if (allEventIds.length === 0) {
+      return NextResponse.json({
+        events: [],
+        ok: true,
+        onboardingRequired: false,
+      })
+    }
+
+    const { data: allSignups, error: allSignupsError } = await adminClient
+      .from('event_signups')
+      .select(
+        'created_at, day_of_confirmation_status, event_id, personal_match_score, personal_match_summary, restaurant_match_score, status, user_id'
+      )
+      .in('event_id', allEventIds)
+      .returns<SignupRow[]>()
+
+    if (allSignupsError) {
+      throw new Error(allSignupsError.message)
+    }
+
+    const visibleEvents = getVisibleEventsForSavedRestaurants({
+      events: events ?? [],
+      savedRestaurantIds,
+      signups: allSignups ?? [],
+      userId: user.id,
+    })
+    const eventIds = visibleEvents.map((event) => event.id)
+    const visibleEventIdSet = new Set(eventIds)
+    const visibleSignups = (allSignups ?? []).filter((signup) =>
+      visibleEventIdSet.has(signup.event_id)
+    )
     const restaurantIds = Array.from(
       new Set(
-        (events ?? [])
+        visibleEvents
           .map((event) => event.restaurant_id)
           .filter((restaurantId): restaurantId is number => restaurantId !== null)
       )
@@ -215,18 +276,6 @@ export async function GET(request: Request) {
       throw new Error(restaurantPlacesError.message)
     }
 
-    const { data: allSignups, error: allSignupsError } = await adminClient
-      .from('event_signups')
-      .select(
-        'created_at, day_of_confirmation_status, event_id, personal_match_score, personal_match_summary, restaurant_match_score, status, user_id'
-      )
-      .in('event_id', eventIds)
-      .returns<SignupRow[]>()
-
-    if (allSignupsError) {
-      throw new Error(allSignupsError.message)
-    }
-
     const { data: feedbackRows, error: feedbackError } = await adminClient
       .from('event_feedback')
       .select('event_id, group_rating, notes, user_id, venue_rating, would_join_again')
@@ -240,7 +289,7 @@ export async function GET(request: Request) {
 
     const attendeeUserIds = Array.from(
       new Set(
-        (allSignups ?? [])
+        visibleSignups
           .filter((signup) => signup.status === 'going')
           .map((signup) => signup.user_id)
       )
@@ -281,7 +330,7 @@ export async function GET(request: Request) {
     const myFeedbackByEvent = new Map(
       (feedbackRows ?? []).map((feedback) => [feedback.event_id, feedback])
     )
-    for (const signup of allSignups ?? []) {
+    for (const signup of visibleSignups) {
       if (signup.status === 'going') {
         attendeeCountByEvent.set(
           signup.event_id,
@@ -333,7 +382,7 @@ export async function GET(request: Request) {
       subregion: profile.subregion,
     }
 
-    const mappedEvents = (events ?? []).map((event) => {
+    const mappedEvents = visibleEvents.map((event) => {
         const attendeeCount = attendeeCountByEvent.get(event.id) ?? 0
         const confirmedTodayCount = confirmedTodayCountByEvent.get(event.id) ?? 0
         const userSignup = mySignupByEvent.get(event.id)

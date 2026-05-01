@@ -43,15 +43,17 @@ function getMatchReason(restaurant: DashboardRestaurant) {
     return restaurant.venueMatchSummary
   }
 
-  if (restaurant.restaurant_cuisines?.length) {
-    return `Picked for ${restaurant.restaurant_cuisines[0].toLowerCase()} food in a setting that fits your night out.`
+  const primaryCuisine = restaurant.restaurant_cuisines?.[0]
+
+  if (primaryCuisine) {
+    return `Picked for ${primaryCuisine.toLowerCase()} food in a setting that fits your night out.`
   }
 
   return 'Picked around your taste, budget and social vibe.'
 }
 
 function getRestaurantImage(restaurant: DashboardRestaurant) {
-  return RESTAURANT_IMAGES[restaurant.id % RESTAURANT_IMAGES.length]
+  return RESTAURANT_IMAGES[restaurant.id % RESTAURANT_IMAGES.length] ?? RESTAURANT_IMAGES[0]!
 }
 
 export function RestaurantCard({

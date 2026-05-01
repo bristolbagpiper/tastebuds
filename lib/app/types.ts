@@ -37,6 +37,7 @@ export type NotificationSummary = {
     | 'event_follow_up'
     | 'event_day_confirmation'
     | 'event_attendance'
+    | 'restaurant_removed'
 }
 
 export type DashboardEvent = {

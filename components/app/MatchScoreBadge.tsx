@@ -5,7 +5,7 @@ export function MatchScoreBadge({
   compact = false,
   score,
 }: {
-  className?: string
+  className?: string | undefined
   compact?: boolean
   score: number | null | undefined
 }) {

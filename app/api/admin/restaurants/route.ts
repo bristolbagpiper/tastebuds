@@ -24,6 +24,7 @@ import {
   normalizeVenuePrice,
   normalizeVibeList,
 } from '@/lib/events'
+import { queueNotifications } from '@/lib/notifications'
 import { requireAdminOrCron } from '@/lib/request-auth'
 import { createServerSupabaseAdminClient } from '@/lib/supabase/server'
 
@@ -134,6 +135,10 @@ type RestaurantSummary = {
   venue_seating_types: string[]
   venue_setting: string[]
   venue_vibes: string[]
+}
+
+type SavedRestaurantUserRow = {
+  user_id: string
 }
 
 const RESTAURANT_SELECT =
@@ -803,14 +808,55 @@ export async function DELETE(request: Request) {
   }
 
   const adminClient = createServerSupabaseAdminClient()
-  const { count, error: countError } = await adminClient
-    .from('events')
-    .select('id', { count: 'exact', head: true })
-    .eq('restaurant_id', restaurantId)
+  const [
+    restaurantResponse,
+    savedRestaurantUsersResponse,
+    eventsCountResponse,
+  ] = await Promise.all([
+    adminClient
+      .from('restaurants')
+      .select('id, name')
+      .eq('id', restaurantId)
+      .maybeSingle<{ id: number; name: string }>(),
+    adminClient
+      .from('saved_restaurants')
+      .select('user_id')
+      .eq('restaurant_id', restaurantId)
+      .returns<SavedRestaurantUserRow[]>(),
+    adminClient
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .eq('restaurant_id', restaurantId),
+  ])
 
-  if (countError) {
-    return NextResponse.json({ error: countError.message }, { status: 500 })
+  const restaurant = restaurantResponse.data
+
+  if (restaurantResponse.error) {
+    return NextResponse.json(
+      { error: restaurantResponse.error.message },
+      { status: 500 }
+    )
   }
+
+  if (!restaurant) {
+    return NextResponse.json({ error: 'Restaurant not found.' }, { status: 404 })
+  }
+
+  if (savedRestaurantUsersResponse.error) {
+    return NextResponse.json(
+      { error: savedRestaurantUsersResponse.error.message },
+      { status: 500 }
+    )
+  }
+
+  if (eventsCountResponse.error) {
+    return NextResponse.json(
+      { error: eventsCountResponse.error.message },
+      { status: 500 }
+    )
+  }
+
+  const count = eventsCountResponse.count
 
   if ((count ?? 0) > 0) {
     const { error: deleteEventsError } = await adminClient
@@ -830,6 +876,35 @@ export async function DELETE(request: Request) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  const savedUserIds = Array.from(
+    new Set((savedRestaurantUsersResponse.data ?? []).map((row) => row.user_id))
+  )
+
+  if (savedUserIds.length > 0) {
+    try {
+      await queueNotifications(
+        savedUserIds.map((userId) => ({
+          body:
+            `${restaurant.name} has been removed from Tastebuds, so we removed it from your saved restaurants. We will keep suggesting nearby tables that fit your taste profile.`,
+          eventId: null,
+          title: 'Saved restaurant removed',
+          type: 'restaurant_removed',
+          userId,
+        }))
+      )
+    } catch (notificationError) {
+      return NextResponse.json(
+        {
+          error:
+            notificationError instanceof Error
+              ? notificationError.message
+              : 'Restaurant was deleted, but notifications could not be queued.',
+        },
+        { status: 500 }
+      )
+    }
   }
 
   return NextResponse.json({ ok: true })

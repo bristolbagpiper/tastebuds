@@ -35,7 +35,7 @@ function getRestaurantSubtitle(restaurant: DashboardRestaurant) {
 }
 
 function getRestaurantImage(index: number) {
-  return RESTAURANT_IMAGES[index % RESTAURANT_IMAGES.length]
+  return RESTAURANT_IMAGES[index % RESTAURANT_IMAGES.length] ?? RESTAURANT_IMAGES[0]!
 }
 
 export function SavedRestaurantTile({
