@@ -6,15 +6,29 @@ on:
     branches:
       - main
 
+env:
+  ADMIN_EMAIL: admin@example.com
+  APP_URL: http://127.0.0.1:3000
+  CRON_SECRET: ci-cron-secret
+  EMAIL_FROM: "Tastebuds <test@example.com>"
+  GOOGLE_MAPS_API_KEY: ci-google-maps-key
+  NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+  NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ci-google-maps-key
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-anon-key
+  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+  NEXT_TELEMETRY_DISABLED: 1
+  RESEND_API_KEY: ci-resend-key
+  SUPABASE_SERVICE_ROLE_KEY: ci-service-role-key
+
 jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           cache: npm
           node-version: 22
@@ -38,10 +52,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           cache: npm
           node-version: 22
