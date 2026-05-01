@@ -33,7 +33,11 @@ function getSavedRestaurantKeys(restaurants: DashboardRestaurant[]) {
 }
 
 function isVisibleEvent(event: DashboardEvent, savedRestaurantKeys: Set<string>) {
-  if (event.signupStatus === 'going') {
+  if (
+    event.signupStatus === 'going' ||
+    event.signupStatus === 'attended' ||
+    event.signupStatus === 'no_show'
+  ) {
     return true
   }
 
@@ -132,6 +136,7 @@ export default function EventDetailPage() {
         (candidate) =>
           candidate.id !== event.id &&
           candidate.status === 'open' &&
+          !candidate.hasEnded &&
           candidate.spotsLeft > 0 &&
           !candidate.isJoined
       )

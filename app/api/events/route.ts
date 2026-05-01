@@ -122,6 +122,8 @@ type RestaurantPlaceRow = {
   id: number
 }
 
+const PAST_EVENT_LOOKBACK_DAYS = 30
+
 function parseBearerToken(request: Request) {
   const authorization = request.headers.get('authorization')
 
@@ -189,9 +191,12 @@ export async function GET(request: Request) {
         )
         .neq('status', 'cancelled')
         .is('archived_at', null)
-        .gte('starts_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+        .gte(
+          'starts_at',
+          new Date(Date.now() - PAST_EVENT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString()
+        )
         .order('starts_at', { ascending: true })
-        .limit(40)
+        .limit(80)
         .returns<EventRow[]>(),
       adminClient
         .from('saved_restaurants')

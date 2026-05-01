@@ -22,6 +22,10 @@ function getActionLabel(
     return 'Updating...'
   }
 
+  if (event.hasEnded) {
+    return 'Event ended'
+  }
+
   if (event.status === 'closed' && !event.isJoined) {
     return 'Signups closed'
   }
@@ -56,6 +60,18 @@ function getListTags(event: DashboardEvent) {
 }
 
 function getSeatSummary(event: DashboardEvent) {
+  if (event.hasEnded) {
+    if (event.feedback.submitted) {
+      return 'You left feedback for this table.'
+    }
+
+    if (event.canSubmitFeedback) {
+      return 'This table has ended. Feedback is still open.'
+    }
+
+    return 'This table has ended.'
+  }
+
   if (event.isJoined) {
     return 'You have a seat at this table.'
   }
@@ -65,6 +81,36 @@ function getSeatSummary(event: DashboardEvent) {
   }
 
   return `This table is currently full for a group of ${event.capacity}.`
+}
+
+function getDetailSeatTitle(event: DashboardEvent) {
+  if (event.hasEnded) {
+    return 'This table has ended'
+  }
+
+  if (event.signupStatus === 'going') {
+    return 'You are in'
+  }
+
+  return event.spotsLeft === 0 ? 'This table is full' : 'You have not joined yet'
+}
+
+function getDetailSeatDescription(event: DashboardEvent) {
+  if (event.hasEnded || event.signupStatus !== 'going') {
+    return getSeatSummary(event)
+  }
+
+  return `Today's reply: ${formatDayConfirmationStatus(event.dayOfConfirmationStatus)}.`
+}
+
+function getAtAGlanceSeatSummary(event: DashboardEvent) {
+  if (event.hasEnded) {
+    return event.feedback.submitted ? 'Feedback submitted' : 'Ended'
+  }
+
+  return event.spotsLeft > 0
+    ? `${event.spotsLeft} ${event.spotsLeft === 1 ? 'seat' : 'seats'} left`
+    : 'Table full'
 }
 
 function getShortEventWindow(event: DashboardEvent) {
@@ -184,7 +230,7 @@ export function EventCard({
   const matchSummary = event.personalMatchSummary ?? event.venueMatchSummary
 
   return (
-    <article className="overflow-hidden rounded-[2rem] border border-[color:var(--border-soft)] bg-white shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+    <article className={`overflow-hidden rounded-[2rem] border bg-white shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)] ${event.hasEnded ? 'border-[color:var(--accent-border)] opacity-90' : 'border-[color:var(--border-soft)]'}`}>
       <div className={showDetails ? '' : 'grid gap-0 lg:grid-cols-[300px_minmax(0,1fr)]'}>
         <div className={showDetails ? 'relative h-72 overflow-hidden sm:h-80' : 'relative min-h-64 overflow-hidden'}>
           <GooglePlacePhoto
@@ -214,6 +260,16 @@ export function EventCard({
                 {event.signupStatus === 'going' ? (
                   <span className="rounded-full bg-[color:var(--accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--accent-strong)]">
                     Joined
+                  </span>
+                ) : null}
+                {event.hasEnded ? (
+                  <span className="rounded-full bg-[#efe9dc] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--text-muted)]">
+                    Ended
+                  </span>
+                ) : null}
+                {event.canSubmitFeedback && !event.feedback.submitted ? (
+                  <span className="rounded-full bg-[color:var(--accent-soft)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--accent-strong)]">
+                    Feedback due
                   </span>
                 ) : null}
               </div>
@@ -257,6 +313,7 @@ export function EventCard({
                 <Button
                   disabled={
                     eventActionLoadingId === event.id ||
+                    event.hasEnded ||
                     (!event.isJoined && (event.status !== 'open' || event.spotsLeft === 0))
                   }
                   onClick={() =>
@@ -289,27 +346,17 @@ export function EventCard({
                 </DetailPanel>
                 <DetailPanel title="Your seat">
                   <p className="text-base font-semibold text-[color:var(--foreground)]">
-                    {event.signupStatus === 'going'
-                      ? 'You are in'
-                      : event.spotsLeft === 0
-                        ? 'This table is full'
-                        : 'You have not joined yet'}
+                    {getDetailSeatTitle(event)}
                   </p>
                   <p className="mt-2 text-sm leading-6 text-[color:var(--text-muted)]">
-                    {event.signupStatus === 'going'
-                      ? `Today's reply: ${formatDayConfirmationStatus(event.dayOfConfirmationStatus)}.`
-                      : getSeatSummary(event)}
+                    {getDetailSeatDescription(event)}
                   </p>
                 </DetailPanel>
                 <DetailPanel title="At a glance">
                   <div className="space-y-2 text-sm text-[color:var(--foreground)]">
                     <p>{formatEventDate(event.starts_at)}</p>
                     <p>Table for {event.capacity}</p>
-                    <p>
-                      {event.spotsLeft > 0
-                        ? `${event.spotsLeft} ${event.spotsLeft === 1 ? 'seat' : 'seats'} left`
-                        : 'Table full'}
-                    </p>
+                    <p>{getAtAGlanceSeatSummary(event)}</p>
                   </div>
                 </DetailPanel>
               </section>
@@ -511,6 +558,7 @@ export function EventCard({
                   <Button
                     disabled={
                       eventActionLoadingId === event.id ||
+                      event.hasEnded ||
                       (!event.isJoined && (event.status !== 'open' || event.spotsLeft === 0))
                     }
                     onClick={() =>

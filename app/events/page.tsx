@@ -30,7 +30,11 @@ function getSavedRestaurantKeys(restaurants: DashboardRestaurant[]) {
 }
 
 function isVisibleEvent(event: DashboardEvent, savedRestaurantKeys: Set<string>) {
-  if (event.signupStatus === 'going') {
+  if (
+    event.signupStatus === 'going' ||
+    event.signupStatus === 'attended' ||
+    event.signupStatus === 'no_show'
+  ) {
     return true
   }
 
@@ -40,6 +44,20 @@ function isVisibleEvent(event: DashboardEvent, savedRestaurantKeys: Set<string>)
   const fallbackKey = `name:${event.restaurant_name.toLowerCase()}::${event.restaurant_subregion.toLowerCase()}`
 
   return (placeKey !== null && savedRestaurantKeys.has(placeKey)) || savedRestaurantKeys.has(fallbackKey)
+}
+
+function needsFeedback(event: DashboardEvent) {
+  return event.canSubmitFeedback && !event.feedback.submitted
+}
+
+function isRelevantPastEvent(event: DashboardEvent) {
+  return (
+    event.hasEnded &&
+    (event.signupStatus === 'going' ||
+      event.signupStatus === 'attended' ||
+      event.signupStatus === 'no_show' ||
+      event.feedback.submitted)
+  )
 }
 
 export default function EventsPage() {
@@ -111,16 +129,24 @@ export default function EventsPage() {
     }
   }
 
-  const orderedEvents = useMemo(() => {
+  const groupedEvents = useMemo(() => {
     const visibleEvents = events.filter((event) => isVisibleEvent(event, savedRestaurantKeys))
-    const joinedEvents = visibleEvents.filter(
+    const activeEvents = visibleEvents.filter((event) => !event.hasEnded)
+    const joinedEvents = activeEvents.filter(
       (event) => event.signupStatus === 'going'
     )
-    const unjoinedEvents = visibleEvents.filter(
+    const unjoinedEvents = activeEvents.filter(
       (event) => event.signupStatus !== 'going'
     )
+    const pastEvents = visibleEvents
+      .filter(isRelevantPastEvent)
+      .sort((left, right) => right.starts_at.localeCompare(left.starts_at))
 
-    return [...joinedEvents, ...unjoinedEvents]
+    return {
+      active: [...joinedEvents, ...unjoinedEvents],
+      needsFeedback: pastEvents.filter(needsFeedback),
+      past: pastEvents,
+    }
   }, [events, savedRestaurantKeys])
 
   if (loading) {
@@ -147,15 +173,37 @@ export default function EventsPage() {
 
       <div className="rounded-[1.75rem] border border-[color:var(--border-soft)] bg-white p-5 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
         <p className="text-sm text-[color:var(--text-muted)]">
-          {orderedEvents.length > 0
-            ? `${orderedEvents.length} live ${orderedEvents.length === 1 ? 'table' : 'tables'} ranked by your match score right now.`
-            : 'Save a restaurant first to unlock live tables here.'}
+          {groupedEvents.active.length > 0
+            ? `${groupedEvents.active.length} live ${groupedEvents.active.length === 1 ? 'table' : 'tables'} ranked by your match score right now.`
+            : groupedEvents.past.length > 0
+              ? 'No live tables right now. Past events are saved below.'
+              : 'Save a restaurant first to unlock live tables here.'}
         </p>
       </div>
 
+      {groupedEvents.needsFeedback.length > 0 ? (
+        <section className="rounded-[1.75rem] border border-[color:var(--accent-border)] bg-[color:var(--accent-softer)] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--accent-strong)]">
+                Feedback due
+              </p>
+              <p className="mt-2 text-base font-semibold text-[color:var(--foreground)]">
+                {groupedEvents.needsFeedback.length === 1
+                  ? `${groupedEvents.needsFeedback[0]!.title} has ended. Leave feedback while it is fresh.`
+                  : `${groupedEvents.needsFeedback.length} past tables need your feedback.`}
+              </p>
+            </div>
+            <Button href={`/events/${groupedEvents.needsFeedback[0]!.id}`}>
+              Leave feedback
+            </Button>
+          </div>
+        </section>
+      ) : null}
+
       <div className="grid gap-5">
-        {orderedEvents.length > 0 ? (
-          orderedEvents.map((event) => (
+        {groupedEvents.active.length > 0 ? (
+          groupedEvents.active.map((event) => (
             <EventCard
               detailHref={`/events/${event.id}`}
               event={event}
@@ -176,6 +224,38 @@ export default function EventsPage() {
           />
         )}
       </div>
+
+      {groupedEvents.past.length > 0 ? (
+        <details className="group rounded-[1.75rem] border border-[color:var(--border-soft)] bg-white p-5 shadow-[0_10px_40px_-10px_rgba(113,92,0,0.08)]">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold text-[color:var(--foreground)] marker:hidden">
+            <span>
+              Past events
+              {groupedEvents.needsFeedback.length > 0 ? (
+                <span className="ml-2 rounded-full bg-[color:var(--accent-soft)] px-2.5 py-1 text-xs font-semibold text-[color:var(--accent-strong)]">
+                  {groupedEvents.needsFeedback.length} feedback due
+                </span>
+              ) : null}
+            </span>
+            <span className="text-xs uppercase tracking-[0.14em] text-[color:var(--text-muted)] group-open:hidden">
+              Show
+            </span>
+            <span className="hidden text-xs uppercase tracking-[0.14em] text-[color:var(--text-muted)] group-open:inline">
+              Hide
+            </span>
+          </summary>
+          <div className="mt-5 grid gap-5">
+            {groupedEvents.past.map((event) => (
+              <EventCard
+                detailHref={`/events/${event.id}`}
+                event={event}
+                eventActionLoadingId={eventActionLoadingId}
+                key={event.id}
+                onSetEventSignup={(action) => void handleEventSignup(event.id, action)}
+              />
+            ))}
+          </div>
+        </details>
+      ) : null}
     </AppShell>
   )
 }
